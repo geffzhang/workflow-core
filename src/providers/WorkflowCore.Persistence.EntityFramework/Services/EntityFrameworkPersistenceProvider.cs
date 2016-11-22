@@ -12,10 +12,19 @@ namespace WorkflowCore.Persistence.EntityFramework.Services
 {
     public abstract class EntityFrameworkPersistenceProvider : DbContext, IPersistenceProvider
     {
+        protected readonly bool _canCreateDB;
+        protected readonly bool _canMigrateDB;
+
+        public EntityFrameworkPersistenceProvider(bool canCreateDB, bool canMigrateDB)
+        {
+            _canCreateDB = canCreateDB;
+            _canMigrateDB = canMigrateDB;            
+        }
 
         protected abstract void ConfigureWorkflowStorage(EntityTypeBuilder<PersistedWorkflow> builder);
         protected abstract void ConfigureSubscriptionStorage(EntityTypeBuilder<PersistedSubscription> builder);
-
+        protected abstract void ConfigurePublicationStorage(EntityTypeBuilder<PersistedPublication> builder);
+        
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -28,21 +37,19 @@ namespace WorkflowCore.Persistence.EntityFramework.Services
             subscriptions.HasIndex(x => x.EventName);
             subscriptions.HasIndex(x => x.EventKey);
 
+            var publications = modelBuilder.Entity<PersistedPublication>();
+            publications.HasIndex(x => x.PublicationId).IsUnique();
+
             ConfigureWorkflowStorage(workflows);
             ConfigureSubscriptionStorage(subscriptions);
-
+            ConfigurePublicationStorage(publications);
         }
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
             base.OnConfiguring(optionsBuilder);
             optionsBuilder.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
-        }
-
-        public void EnsureStoreExists()
-        {
-            Database.EnsureCreated();
-        }
+        }        
 
         public async Task<string> CreateEventSubscription(EventSubscription subscription)
         {
@@ -69,7 +76,7 @@ namespace WorkflowCore.Persistence.EntityFramework.Services
             var now = DateTime.Now.ToUniversalTime().Ticks;
             var raw = Set<PersistedWorkflow>()
                 .Where(x => x.NextExecution.HasValue && x.NextExecution <= now)
-                .Select(x => x.InstanceId)                
+                .Select(x => x.InstanceId)
                 .ToList();
 
             List<string> result = new List<string>();
@@ -120,7 +127,46 @@ namespace WorkflowCore.Persistence.EntityFramework.Services
             Set<PersistedSubscription>().Remove(existing);
             SaveChanges();
         }
-        
-        
+
+        public async Task CreateUnpublishedEvent(EventPublication publication)
+        {
+            var persistable = publication.ToPersistable();
+            var result = Set<PersistedPublication>().Add(persistable);
+            SaveChanges();
+            Entry(persistable).State = EntityState.Detached;
+        }
+
+        public async Task<IEnumerable<EventPublication>> GetUnpublishedEvents()
+        {
+            var raw = Set<PersistedPublication>().ToList();
+
+            List<EventPublication> result = new List<EventPublication>();
+            foreach (var item in raw)
+                result.Add(item.ToEventPublication());
+
+            return result;
+        }
+
+        public async Task RemoveUnpublishedEvent(Guid id)
+        {           
+            var existing = Set<PersistedPublication>().First(x => x.PublicationId == id);
+            Set<PersistedPublication>().Remove(existing);
+            SaveChanges();
+        }
+
+        public virtual void EnsureStoreExists()
+        {
+            if (_canCreateDB && !_canMigrateDB)
+            {
+                Database.EnsureCreated();
+                return;
+            }
+
+            if (_canMigrateDB)
+            {
+                Database.Migrate();
+                return;
+            }
+        }
     }
 }

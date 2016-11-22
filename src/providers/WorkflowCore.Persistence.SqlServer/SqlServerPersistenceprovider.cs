@@ -13,7 +13,8 @@ namespace WorkflowCore.Persistence.SqlServer
     {
         private readonly string _connectionString;
 
-        public SqlServerPersistenceProvider(string connectionString)
+        public SqlServerPersistenceProvider(string connectionString, bool canCreateDB, bool canMigrateDB)
+            : base(canCreateDB, canMigrateDB)
         {
             if (!connectionString.Contains("MultipleActiveResultSets"))
                 connectionString += ";MultipleActiveResultSets=True";
@@ -29,12 +30,21 @@ namespace WorkflowCore.Persistence.SqlServer
 
         protected override void ConfigureSubscriptionStorage(EntityTypeBuilder<PersistedSubscription> builder)
         {
+            builder.ForSqlServerToTable("Subscription", "wfc");
             builder.Property(x => x.ClusterKey).UseSqlServerIdentityColumn();
         }
 
         protected override void ConfigureWorkflowStorage(EntityTypeBuilder<PersistedWorkflow> builder)
         {
+            builder.ForSqlServerToTable("Workflow", "wfc");
             builder.Property(x => x.ClusterKey).UseSqlServerIdentityColumn();
         }
+        
+        protected override void ConfigurePublicationStorage(EntityTypeBuilder<PersistedPublication> builder)
+        {
+            builder.ForSqlServerToTable("UnpublishedEvent", "wfc");
+            builder.Property(x => x.ClusterKey).UseSqlServerIdentityColumn();
+        }
+                
     }
 }

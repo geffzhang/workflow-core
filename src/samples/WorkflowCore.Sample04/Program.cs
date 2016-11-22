@@ -1,6 +1,8 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using MongoDB.Driver;
+using RabbitMQ.Client;
+using StackExchange.Redis;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -17,20 +19,20 @@ namespace WorkflowCore.Sample04
         {
             IServiceProvider serviceProvider = ConfigureServices();
 
-            //start the workflow runtime
-            var runtime = serviceProvider.GetService<IWorkflowRuntime>();
-            runtime.RegisterWorkflow<EventSampleWorkflow, MyDataClass>();
-            runtime.StartRuntime();
+            //start the workflow host
+            var host = serviceProvider.GetService<IWorkflowHost>();
+            host.RegisterWorkflow<EventSampleWorkflow, MyDataClass>();
+            host.Start();
 
             var initialData = new MyDataClass();
-            runtime.StartWorkflow("EventSampleWorkflow", 1, initialData);
+            host.StartWorkflow("EventSampleWorkflow", 1, initialData);
 
             Console.WriteLine("Enter value to publish");
             string value = Console.ReadLine();
-            runtime.PublishEvent("MyEvent", "0", value);
+            host.PublishEvent("MyEvent", "0", value);
 
             Console.ReadLine();
-            runtime.StopRuntime();
+            host.Stop();
         }
 
         private static IServiceProvider ConfigureServices()
@@ -40,8 +42,17 @@ namespace WorkflowCore.Sample04
             services.AddLogging();
             services.AddWorkflow();
             //services.AddWorkflow(x => x.UseMongoDB(@"mongodb://localhost:27017", "workflow"));
-            //services.AddWorkflow(x => x.UseSqlServer(@"Server=.;Database=WorkflowCore;Trusted_Connection=True;"));
-            //services.AddWorkflow(x => x.UsePostgreSQL(@"Server=127.0.0.1;Port=5432;Database=workflow;User Id=postgres;Password=password;"));
+            //services.AddWorkflow(x => x.UseSqlServer(@"Server=.;Database=WorkflowCore;Trusted_Connection=True;", true, true));
+            //services.AddWorkflow(x => x.UsePostgreSQL(@"Server=127.0.0.1;Port=5432;Database=workflow;User Id=postgres;Password=password;", true, true));
+            //services.AddWorkflow(x => x.UseSqlite(@"Data Source=database.db;", true));
+            //redis = ConnectionMultiplexer.Connect("127.0.0.1");
+            //services.AddWorkflow(x =>
+            //{
+            //    x.UseMongoDB(@"mongodb://localhost:27017", "workflow");
+            //    x.UseRabbitMQ(new ConnectionFactory() { HostName = "localhost" });
+            //    x.UseRedlock(redis);
+            //});
+
 
             var serviceProvider = services.BuildServiceProvider();
 
@@ -50,5 +61,7 @@ namespace WorkflowCore.Sample04
             loggerFactory.AddDebug();
             return serviceProvider;
         }
+
+        private static IConnectionMultiplexer redis;
     }
 }

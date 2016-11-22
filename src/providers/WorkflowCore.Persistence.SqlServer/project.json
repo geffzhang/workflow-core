@@ -1,20 +1,30 @@
 {
   "title": "Workflow Core SQL Server Persistence Provider",
   "authors": [ "Daniel Gerlag" ],
-  "version": "1.0.0-beta3",
+  "version": "1.0.0-beta6",
 
   "dependencies": {
-    "Microsoft.EntityFrameworkCore.SqlServer": "1.1.0",
     "NETStandard.Library": "1.6.0",
-    "WorkflowCore": "1.0.0-*",
-    "WorkflowCore.Persistence.EntityFramework": "1.0.0-beta3"
+    "Microsoft.EntityFrameworkCore.SqlServer": "1.1.0",
+    "WorkflowCore": "1.0.0-beta6",
+    "WorkflowCore.Persistence.EntityFramework": "1.0.0-beta6",
+    "Microsoft.EntityFrameworkCore.Tools": {
+      "version": "1.1.0-preview4-final",
+      "type": "build"
+    },
+    "Microsoft.EntityFrameworkCore.Design": "1.1.0"
   },
 
   "frameworks": {
-    "netstandard1.6": {
+    "netstandard1.3": {
       "imports": "dnxcore50"
     }
   },
+
+  "tools": {
+    "Microsoft.EntityFrameworkCore.Tools": "1.1.0-preview4-final"
+  },
+
 
   "packOptions": {
     "summary": "A persistence provider for WorkflowCore using SQL Server",

@@ -13,7 +13,8 @@ namespace WorkflowCore.Persistence.PostgreSQL
     {
         private readonly string _connectionString;
 
-        public PostgresPersistenceProvider(string connectionString)
+        public PostgresPersistenceProvider(string connectionString, bool canCreateDB, bool canMigrateDB)
+            :base(canCreateDB, canMigrateDB)
         {   
             _connectionString = connectionString;
         }
@@ -26,13 +27,22 @@ namespace WorkflowCore.Persistence.PostgreSQL
 
         protected override void ConfigureSubscriptionStorage(EntityTypeBuilder<PersistedSubscription> builder)
         {
+            builder.ForNpgsqlToTable("Subscription", "wfc");
             builder.Property(x => x.ClusterKey).ValueGeneratedOnAdd();
         }
 
         protected override void ConfigureWorkflowStorage(EntityTypeBuilder<PersistedWorkflow> builder)
         {
+            builder.ForNpgsqlToTable("Workflow", "wfc");
             builder.Property(x => x.ClusterKey).ValueGeneratedOnAdd();
         }
+        
+        protected override void ConfigurePublicationStorage(EntityTypeBuilder<PersistedPublication> builder)
+        {
+            builder.ForNpgsqlToTable("UnpublishedEvent", "wfc");
+            builder.Property(x => x.ClusterKey).ValueGeneratedOnAdd();
+        }
+                
     }
 }
 

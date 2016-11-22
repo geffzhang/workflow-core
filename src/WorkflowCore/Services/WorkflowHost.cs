@@ -10,27 +10,29 @@ using WorkflowCore.Models;
 
 namespace WorkflowCore.Services
 {
-    public class WorkflowRuntime : IWorkflowRuntime
+    public class WorkflowHost : IWorkflowHost
     {
 
-        protected readonly IPersistenceProvider _persistenceStore;
-        protected readonly IConcurrencyProvider _concurrencyProvider;
+        protected readonly IPersistenceProvider _persistenceStore;        
+        protected readonly IDistributedLockProvider _lockProvider;
         protected readonly IWorkflowRegistry _registry;
         protected readonly WorkflowOptions _options;
+        protected readonly IQueueProvider _queueProvider;
         protected List<Thread> _threads = new List<Thread>();
         protected bool _shutdown = true;
         protected ILogger _logger;
         protected IServiceProvider _serviceProvider;
         protected Timer _pollTimer;
 
-        public WorkflowRuntime(IPersistenceProvider persistenceStore, IConcurrencyProvider concurrencyProvider, WorkflowOptions options, ILoggerFactory loggerFactory, IServiceProvider serviceProvider, IWorkflowRegistry registry)
+        public WorkflowHost(IPersistenceProvider persistenceStore, IQueueProvider queueProvider, WorkflowOptions options, ILoggerFactory loggerFactory, IServiceProvider serviceProvider, IWorkflowRegistry registry, IDistributedLockProvider lockProvider)
         {
             _persistenceStore = persistenceStore;
-            _concurrencyProvider = concurrencyProvider;
+            _queueProvider = queueProvider;
             _options = options;
-            _logger = loggerFactory.CreateLogger<WorkflowRuntime>();
+            _logger = loggerFactory.CreateLogger<WorkflowHost>();
             _serviceProvider = serviceProvider;
             _registry = registry;
+            _lockProvider = lockProvider;
             persistenceStore.EnsureStoreExists();
         }
 
@@ -41,6 +43,9 @@ namespace WorkflowCore.Services
 
         public async Task<string> StartWorkflow<TData>(string workflowId, int version, TData data)
         {
+            if (_shutdown)
+                throw new Exception("Host is not running");
+
             var def = _registry.GetDefinition(workflowId, version);
             if (def == null)
                 throw new Exception(String.Format("Workflow {0} version {1} is not registered", workflowId, version));
@@ -53,14 +58,14 @@ namespace WorkflowCore.Services
             wf.NextExecution = 0;
             wf.ExecutionPointers.Add(new ExecutionPointer() { StepId = def.InitialStep, Active = true });
             string id = await _persistenceStore.CreateNewWorkflow(wf);
-            await _concurrencyProvider.EnqueueForProcessing(id);
+            await _queueProvider.QueueForProcessing(id);
             return id;
         }
 
-        public void StartRuntime()
-        {
-            _concurrencyProvider.StartupNode();
+        public void Start()
+        {            
             _shutdown = false;
+            _queueProvider.Start();
             for (int i = 0; i < _options.ThreadCount; i++)
             {
                 _logger.LogInformation("Starting worker thread #{0}", i);
@@ -77,7 +82,7 @@ namespace WorkflowCore.Services
             _pollTimer = new Timer(new TimerCallback(PollRunnables), null, TimeSpan.FromSeconds(0), _options.PollInterval);
         }
 
-        public void StopRuntime()
+        public void Stop()
         {
             _shutdown = true;
 
@@ -87,12 +92,14 @@ namespace WorkflowCore.Services
                 _pollTimer = null;
             }
 
+            var stashTask = StashUnpublishedEvents();
+
             _logger.LogInformation("Stopping worker threads");
             foreach (Thread th in _threads)
                 th.Join();
-
             _logger.LogInformation("Worker threads stopped");
-            _concurrencyProvider.ShutdownNode();
+            stashTask.Wait();
+            _queueProvider.Stop();
         }
 
 
@@ -110,17 +117,21 @@ namespace WorkflowCore.Services
 
         public async Task PublishEvent(string eventName, string eventKey, object eventData)
         {
+            if (_shutdown)
+                throw new Exception("Host is not running");
+
             _logger.LogDebug("Publishing event {0} {1}", eventName, eventKey);
             var subs = await _persistenceStore.GetSubcriptions(eventName, eventKey);
             foreach (var sub in subs.ToList())
             {
                 EventPublication pub = new EventPublication();
+                pub.Id = Guid.NewGuid();
                 pub.EventData = eventData;
                 pub.EventKey = eventKey;
                 pub.EventName = eventName;
                 pub.StepId = sub.StepId;
                 pub.WorkflowId = sub.WorkflowId;
-                await _concurrencyProvider.EnqueueForPublishing(pub);
+                await _queueProvider.QueueForPublishing(pub);
                 await _persistenceStore.TerminateSubscription(sub.Id);                
             }
         }
@@ -136,12 +147,12 @@ namespace WorkflowCore.Services
             {
                 try
                 {
-                    var workflowId = _concurrencyProvider.DequeueForProcessing().Result;
+                    var workflowId = _queueProvider.DequeueForProcessing().Result;
                     if (workflowId != null)
                     {
                         try
                         {
-                            if (_concurrencyProvider.AcquireLock(workflowId).Result)
+                            if (_lockProvider.AcquireLock(workflowId).Result)
                             {
                                 var workflow = persistenceStore.GetWorkflowInstance(workflowId).Result;
                                 try
@@ -150,9 +161,9 @@ namespace WorkflowCore.Services
                                 }
                                 finally
                                 {
-                                    _concurrencyProvider.ReleaseLock(workflowId);
+                                    _lockProvider.ReleaseLock(workflowId);
                                     if (workflow.NextExecution.HasValue && workflow.NextExecution.Value < DateTime.Now.ToUniversalTime().Ticks)
-                                        _concurrencyProvider.EnqueueForProcessing(workflowId);
+                                        _queueProvider.QueueForProcessing(workflowId);
                                 }
                             }
                             else
@@ -185,12 +196,12 @@ namespace WorkflowCore.Services
             {
                 try
                 {
-                    var pub = _concurrencyProvider.DequeueForPublishing().Result;
+                    var pub = _queueProvider.DequeueForPublishing().Result;
                     if (pub != null)
                     {
                         try
                         {
-                            if (_concurrencyProvider.AcquireLock(pub.WorkflowId).Result)
+                            if (_lockProvider.AcquireLock(pub.WorkflowId).Result)
                             {                                
                                 try
                                 {
@@ -208,18 +219,18 @@ namespace WorkflowCore.Services
                                 catch (Exception ex)
                                 {
                                     _logger.LogError(ex.Message);
-                                    _concurrencyProvider.EnqueueForDeferredPublishing(pub); //retry later                                    
+                                    persistenceStore.CreateUnpublishedEvent(pub); //retry later                                    
                                 }
                                 finally
                                 {
-                                    _concurrencyProvider.ReleaseLock(pub.WorkflowId);
-                                    _concurrencyProvider.EnqueueForProcessing(pub.WorkflowId);
+                                    _lockProvider.ReleaseLock(pub.WorkflowId);
+                                    _queueProvider.QueueForProcessing(pub.WorkflowId);
                                 }
                             }
                             else
                             {
                                 _logger.LogInformation("Workflow locked {0}", pub.WorkflowId);
-                                _concurrencyProvider.EnqueueForDeferredPublishing(pub); //retry later
+                                persistenceStore.CreateUnpublishedEvent(pub); //retry later
                             }
                         }
                         catch (Exception ex)
@@ -240,8 +251,12 @@ namespace WorkflowCore.Services
             }
         }
 
+        /// <summary>
+        /// Poll the persistence store for workflows ready to run.
+        /// Poll the persistence store for stashed unpublished events
+        /// </summary>        
         private void PollRunnables(object target)
-        {
+        {   
             try
             {
                 _logger.LogInformation("Polling for runnable workflows");
@@ -250,12 +265,51 @@ namespace WorkflowCore.Services
                 foreach (var item in runnables)
                 {
                     _logger.LogDebug("Got runnable instance {0}", item);
-                    _concurrencyProvider.EnqueueForProcessing(item);
+                    _queueProvider.QueueForProcessing(item);
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex.Message);
+            }
+
+            if (_lockProvider.AcquireLock("unpublished events").Result)
+            {
+                try
+                {
+
+                    _logger.LogInformation("Polling for unpublished events");
+                    IPersistenceProvider persistenceStore = _serviceProvider.GetService<IPersistenceProvider>();
+                    var events = persistenceStore.GetUnpublishedEvents().Result.ToList();
+                    foreach (var item in events)
+                    {
+                        _logger.LogDebug("Got unpublished event {0} {1}", item.EventName, item.EventKey);
+                        _queueProvider.QueueForPublishing(item).Wait();
+                        persistenceStore.RemoveUnpublishedEvent(item.Id).Wait();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex.Message);
+                }
+                finally
+                {
+                    _lockProvider.ReleaseLock("unpublished events").Wait();
+                }
+            }
+            
+        }
+
+        private async Task StashUnpublishedEvents()
+        {
+            if (!_shutdown)
+            {
+                var pub = await _queueProvider.DequeueForPublishing();
+                while (pub != null)
+                {
+                    await _persistenceStore.CreateUnpublishedEvent(pub);
+                    pub = await _queueProvider.DequeueForPublishing();
+                }
             }
         }
 
