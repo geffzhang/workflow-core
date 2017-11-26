@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
 using WorkflowCore.Interface;
 using WorkflowCore.Models;
 
@@ -9,27 +8,46 @@ namespace WorkflowCore.Services
 {
     public class WorkflowRegistry : IWorkflowRegistry
     {
-
         private readonly IServiceProvider _serviceProvider;
-        private List<Tuple<string, int, WorkflowDefinition>> _registry = new List<Tuple<string, int, WorkflowDefinition>>();
+        private readonly List<Tuple<string, int, WorkflowDefinition>> _registry = new List<Tuple<string, int, WorkflowDefinition>>();
 
         public WorkflowRegistry(IServiceProvider serviceProvider)
         {
             _serviceProvider = serviceProvider;
         }
 
-        public WorkflowDefinition GetDefinition(string workflowId, int version)
+        public WorkflowDefinition GetDefinition(string workflowId, int? version = null)
         {
-            var entry = _registry.FirstOrDefault(x => x.Item1 == workflowId && x.Item2 == version);
-            if (entry == null)
-                return null;
-            return entry.Item3;
+            if (version.HasValue)
+            {
+                var entry = _registry.FirstOrDefault(x => x.Item1 == workflowId && x.Item2 == version.Value);
+                if (entry == null)
+                {
+                    return null;
+                }
+
+                // TODO: What in the heack does Item3 mean?
+                return entry.Item3;
+            }
+            else
+            {
+                int maxVersion = _registry.Where(x => x.Item1 == workflowId).Max(x => x.Item2);
+                var entry = _registry.FirstOrDefault(x => x.Item1 == workflowId && x.Item2 == maxVersion);
+                if (entry == null)
+                {
+                    return null;
+                }
+
+                return entry.Item3;
+            }
         }
 
         public void RegisterWorkflow(IWorkflow workflow)
         {
             if (_registry.Any(x => x.Item1 == workflow.Id && x.Item2 == workflow.Version))
-                throw new Exception(String.Format("Workflow {0} version {1} is already registed", workflow.Id, workflow.Version));
+            {
+                throw new InvalidOperationException($"Workflow {workflow.Id} version {workflow.Version} is already registered");
+            }
 
             var builder = (_serviceProvider.GetService(typeof(IWorkflowBuilder)) as IWorkflowBuilder).UseData<object>();            
             workflow.Build(builder);
@@ -41,7 +59,9 @@ namespace WorkflowCore.Services
             where TData : new()
         {
             if (_registry.Any(x => x.Item1 == workflow.Id && x.Item2 == workflow.Version))
-                throw new Exception(String.Format("Workflow {0} version {1} is already registed", workflow.Id, workflow.Version));
+            {
+                throw new InvalidOperationException($"Workflow {workflow.Id} version {workflow.Version} is already registed");
+            }
 
             var builder = (_serviceProvider.GetService(typeof(IWorkflowBuilder)) as IWorkflowBuilder).UseData<TData>();
             workflow.Build(builder);

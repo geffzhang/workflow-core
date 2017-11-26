@@ -1,7 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 
 namespace WorkflowCore.Models
 {
@@ -15,6 +13,14 @@ namespace WorkflowCore.Models
 
         public object PersistenceData { get; set; }
 
+        public string EventName { get; set; }
+
+        public string EventKey { get; set; }
+
+        public DateTime EventAsOf { get; set; }
+
+        public List<object> BranchValues { get; set; } = new List<object>();
+
         public ExecutionResult()
         {
         }
@@ -25,5 +31,62 @@ namespace WorkflowCore.Models
             OutcomeValue = outcome;
         }
 
+        public static ExecutionResult Outcome(object value)
+        {
+            return new ExecutionResult()
+            {
+                Proceed = true,
+                OutcomeValue = value
+            };
+        }
+
+        public static ExecutionResult Next()
+        {
+            return new ExecutionResult()
+            {
+                Proceed = true,
+                OutcomeValue = null
+            };
+        }
+
+        public static ExecutionResult Persist(object persistenceData)
+        {
+            return new ExecutionResult()
+            {
+                Proceed = false,
+                PersistenceData = persistenceData
+            };
+        }
+
+        public static ExecutionResult Branch(List<object> branches, object persistenceData)
+        {
+            return new ExecutionResult()
+            {
+                Proceed = false,
+                PersistenceData = persistenceData,
+                BranchValues = branches
+            };
+        }
+
+        public static ExecutionResult Sleep(TimeSpan duration, object persistenceData)
+        {
+            return new ExecutionResult()
+            {
+                Proceed = false,
+                SleepFor = duration,
+                PersistenceData = persistenceData
+            };
+        }
+
+        public static ExecutionResult WaitForEvent(string eventName, string eventKey, DateTime effectiveDate)
+        {
+            return new ExecutionResult()
+            {
+                Proceed = false,
+                EventName = eventName,
+                EventKey = eventKey,
+                EventAsOf = effectiveDate.ToUniversalTime()
+            };
+        }
     }
 }

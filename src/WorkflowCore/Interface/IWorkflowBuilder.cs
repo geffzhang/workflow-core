@@ -1,13 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
-using WorkflowCore.Interface;
 using WorkflowCore.Models;
+using WorkflowCore.Primitives;
 
 namespace WorkflowCore.Interface
 {
     public interface IWorkflowBuilder
     {
-        int InitialStep { get; set; }                
+        int LastStep { get; }                
 
         IWorkflowBuilder<T> UseData<T>();
 
@@ -19,10 +19,13 @@ namespace WorkflowCore.Interface
     public interface IWorkflowBuilder<TData> : IWorkflowBuilder
     {        
         IStepBuilder<TData, TStep> StartWith<TStep>(Action<IStepBuilder<TData, TStep>> stepSetup = null) where TStep : IStepBody;
+
         IStepBuilder<TData, InlineStepBody> StartWith(Func<IStepExecutionContext, ExecutionResult> body);
 
-        IEnumerable<WorkflowStep> GetUpstreamSteps(int id);
-    }
-        
+        IStepBuilder<TData, ActionStepBody> StartWith(Action<IStepExecutionContext> body);
 
+        IEnumerable<WorkflowStep> GetUpstreamSteps(int id);
+
+        IWorkflowBuilder<TData> UseDefaultErrorBehavior(WorkflowErrorHandling behavior, TimeSpan? retryInterval = null);
+    }
 }

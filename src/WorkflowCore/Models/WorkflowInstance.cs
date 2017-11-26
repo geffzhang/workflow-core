@@ -1,8 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using WorkflowCore.Interface;
 
 namespace WorkflowCore.Models
 {
@@ -16,15 +13,27 @@ namespace WorkflowCore.Models
 
         public string Description { get; set; }
 
+        public string Reference { get; set; }
+
         public List<ExecutionPointer> ExecutionPointers { get; set; } = new List<ExecutionPointer>();
 
         public long? NextExecution { get; set; }
 
         public WorkflowStatus Status { get; set; }
 
-        public object Data { get; set; }        
-               
+        public object Data { get; set; }
+
+        public DateTime CreateTime { get; set; }
+
+        public DateTime? CompleteTime { get; set; }        
+
     }
 
-    public enum WorkflowStatus { Runnable = 0, Suspended = 1, Complete = 2, Terminated = 3 }
+    public enum WorkflowStatus 
+    { 
+        Runnable = 0, 
+        Suspended = 1, 
+        Complete = 2, 
+        Terminated = 3 
+    }
 }

@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Microsoft.Extensions.Logging;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -9,10 +10,19 @@ namespace WorkflowCore.Sample01.Steps
 {
     public class GoodbyeWorld : StepBody
     {
+
+        private ILogger _logger;
+
+        public GoodbyeWorld(ILoggerFactory loggerFactory)
+        {
+            _logger = loggerFactory.CreateLogger<GoodbyeWorld>();
+        }
+
         public override ExecutionResult Run(IStepExecutionContext context)
         {
             Console.WriteLine("Goodbye world");
-            return OutcomeResult(null);
+            _logger.LogInformation("Hi there!");
+            return ExecutionResult.Next();
         }
     }
 }

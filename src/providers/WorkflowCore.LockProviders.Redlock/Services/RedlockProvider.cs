@@ -12,6 +12,7 @@ using WorkflowCore.LockProviders.Redlock.Models;
 
 namespace WorkflowCore.LockProviders.Redlock.Services
 {
+#pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
     public class RedlockProvider : IDistributedLockProvider
     {
         const int DefaultRetryCount = 3;
@@ -35,7 +36,7 @@ namespace WorkflowCore.LockProviders.Redlock.Services
                 this.redisMasterDictionary.Add(item.GetEndPoints().First().ToString(), item);
         }
 
-        public async Task<bool> AcquireLock(string Id)
+        public async Task<bool> AcquireLock(string Id, CancellationToken cancellationToken)
         {
             Lock lockObject = null;
             if (Lock(Id, TimeSpan.FromMinutes(30), out lockObject))
@@ -182,6 +183,17 @@ namespace WorkflowCore.LockProviders.Redlock.Services
                 UnlockInstance(redis, lockObject.Resource, lockObject.Value);
             });
         }
-        
+
+        public async Task Start()
+        {
+
+        }
+
+        public async Task Stop()
+        {
+
+        }
+
     }
+#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
 }

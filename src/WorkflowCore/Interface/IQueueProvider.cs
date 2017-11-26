@@ -1,8 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
-using WorkflowCore.Models;
 
 namespace WorkflowCore.Interface
 {
@@ -14,30 +12,25 @@ namespace WorkflowCore.Interface
     {
 
         /// <summary>
-        /// Queues the workflow to be processed by a host in the cluster
+        /// Enqueues work to be processed by a host in the cluster
         /// </summary>
         /// <param name="Id"></param>
         /// <returns></returns>
-        Task QueueForProcessing(string Id);
+        Task QueueWork(string id, QueueType queue);
 
         /// <summary>
-        /// Fetches the next workflow instance from the front of the process queue.
+        /// Fetches the next work item from the front of the process queue.
         /// If the queue is empty, NULL is returned
         /// </summary>
         /// <returns></returns>
-        Task<string> DequeueForProcessing();        
+        Task<string> DequeueWork(QueueType queue, CancellationToken cancellationToken);
 
-        Task QueueForPublishing(EventPublication item);
+        bool IsDequeueBlocking { get; }
 
-        /// <summary>
-        /// Fetches the next published event from the front of the queue.
-        /// If the queue is empty, NULL is returned
-        /// </summary>
-        /// <returns></returns>
-        Task<EventPublication> DequeueForPublishing();
+        Task Start();
 
-        void Start();
-        void Stop();
-
+        Task Stop();
     }
+
+    public enum QueueType { Workflow = 0, Event = 1 }
 }

@@ -1,8 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using WorkflowCore.Interface;
 
 namespace WorkflowCore.Models
 {
@@ -18,6 +14,6 @@ namespace WorkflowCore.Models
 
         public string EventKey { get; set; }
 
-
+        public DateTime SubscribeAsOf { get; set; }
     }
 }

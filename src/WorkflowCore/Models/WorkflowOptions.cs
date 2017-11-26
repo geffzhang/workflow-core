@@ -1,7 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using WorkflowCore.Interface;
 using WorkflowCore.Services;
 
@@ -12,18 +9,15 @@ namespace WorkflowCore.Models
         internal Func<IServiceProvider, IPersistenceProvider> PersistanceFactory;
         internal Func<IServiceProvider, IQueueProvider> QueueFactory;
         internal Func<IServiceProvider, IDistributedLockProvider> LockFactory;
-        internal int ThreadCount;
         internal TimeSpan PollInterval;
         internal TimeSpan IdleTime;
-        internal TimeSpan ErrorRetryInterval;
+        internal TimeSpan ErrorRetryInterval;        
 
         public WorkflowOptions()
         {
-            //set defaults
-            ThreadCount = Environment.ProcessorCount;
             PollInterval = TimeSpan.FromSeconds(10);
-            IdleTime = TimeSpan.FromMilliseconds(500);
-            ErrorRetryInterval = TimeSpan.FromSeconds(60);
+            IdleTime = TimeSpan.FromMilliseconds(100);
+            ErrorRetryInterval = TimeSpan.FromSeconds(60);            
 
             QueueFactory = new Func<IServiceProvider, IQueueProvider>(sp => new SingleNodeQueueProvider());
             LockFactory = new Func<IServiceProvider, IDistributedLockProvider>(sp => new SingleNodeLockProvider());
@@ -45,15 +39,15 @@ namespace WorkflowCore.Models
             QueueFactory = factory;
         }
 
-        public void UseThreads(int count)
-        {
-            ThreadCount = count;
-        }
-
         public void UsePollInterval(TimeSpan interval)
         {
             PollInterval = interval;
         }
 
+        public void UseErrorRetryInterval(TimeSpan interval)
+        {
+            ErrorRetryInterval = interval;
+        }
     }
+        
 }

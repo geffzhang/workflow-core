@@ -16,7 +16,7 @@ namespace WorkflowCore.Sample03
                 .StartWith(context =>
                 {
                     Console.WriteLine("Starting workflow...");
-                    return new ExecutionResult(null);
+                    return ExecutionResult.Next();
                 })
                 .Then<AddNumbers>()
                     .Input(step => step.Input1, data => data.Value1)
@@ -27,25 +27,14 @@ namespace WorkflowCore.Sample03
                     .Input(step => step.Message, data => "The answer is " + data.Value3.ToString())
                 .Then(context =>
                     {
-                        Console.WriteLine("Workflow comeplete");
-                        return new ExecutionResult(null);
+                        Console.WriteLine("Workflow complete");
+                        return ExecutionResult.Next();
                     });
         }
 
-        public string Id
-        {
-            get
-            {
-                return "PassingDataWorkflow";
-            }
-        }
+        public string Id => "PassingDataWorkflow";
+            
+        public int Version => 1;
 
-        public int Version
-        {
-            get
-            {
-                return 1;
-            }
-        }
     }
 }
