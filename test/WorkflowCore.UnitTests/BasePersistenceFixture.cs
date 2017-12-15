@@ -44,7 +44,7 @@ namespace WorkflowCore.UnitTests
         {
             var workflow = new WorkflowInstance()
             {
-                Data = new { Value1 = 7 },
+                Data = new TestData() { Value1 = 7 },
                 Description = "My Description",
                 Status = WorkflowStatus.Runnable,
                 NextExecution = 0,
@@ -69,7 +69,7 @@ namespace WorkflowCore.UnitTests
         {
             var oldWorkflow = new WorkflowInstance()
             {
-                Data = new { Value1 = 7 },
+                Data = new TestData() { Value1 = 7 },
                 Description = "My Description",
                 Status = WorkflowStatus.Runnable,
                 NextExecution = 0,
@@ -85,6 +85,7 @@ namespace WorkflowCore.UnitTests
             });
             var workflowId = Subject.CreateNewWorkflow(oldWorkflow).Result;
             var newWorkflow = Utils.DeepCopy(oldWorkflow);
+            newWorkflow.Data = oldWorkflow.Data;
             newWorkflow.NextExecution = 7;
             newWorkflow.ExecutionPointers.Add(new ExecutionPointer() { Id = Guid.NewGuid().ToString(), Active = true, StepId = 1 });
 
@@ -107,7 +108,7 @@ namespace WorkflowCore.UnitTests
                 {
                     var oldWorkflow = new WorkflowInstance()
                     {
-                        Data = new { Value1 = 7 },
+                        Data = new TestData() { Value1 = 7 },
                         Description = "My Description",
                         Status = WorkflowStatus.Runnable,
                         NextExecution = 0,
@@ -135,5 +136,10 @@ namespace WorkflowCore.UnitTests
                 action.ShouldNotThrow<InvalidOperationException>();
             });
         }
+    }
+
+    public class TestData
+    {
+        public int Value1 { get; set; }
     }
 }
