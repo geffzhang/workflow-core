@@ -25,6 +25,28 @@ public class MyWorkflow : IWorkflow
 }
 ```
 
+## JSON Workflow Definitions
+
+Define your workflows in JSON
+
+```json
+{
+  "Id": "HelloWorld",
+  "Version": 1,
+  "Steps": [
+    {
+      "Id": "Hello",
+      "StepType": "MyApp.HelloWorld, MyApp",
+      "NextStepId": "Bye"
+    },        
+    {
+      "Id": "Bye",
+      "StepType": "MyApp.GoodbyeWorld, MyApp"
+    }
+  ]
+}
+```
+
 ### Sample use cases
 
 * New user workflow
@@ -140,9 +162,12 @@ There are several persistence providers available as separate Nuget packages.
 * [Testing](src/samples/WorkflowCore.TestSample01)
 
 
-## Authors
+## Contributors
 
 * **Daniel Gerlag** - *Initial work*
+* **Jackie Ja**
+* **Aaron Scribnor**
+* **Roberto Paterlini**
 
 ## Ports
 
