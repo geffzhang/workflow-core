@@ -182,7 +182,9 @@ namespace WorkflowCore.Services
                 var member = (output.Target.Body as MemberExpression);
                 var resolvedValue = output.Source.Compile().DynamicInvoke(body);
                 var data = workflow.Data;
-                data.GetType().GetProperty(member.Member.Name).SetValue(data, resolvedValue);
+                var property = data.GetType().GetProperty(member.Member.Name);
+                var convertedValue = Convert.ChangeType(resolvedValue, property.PropertyType);
+                property.SetValue(data, convertedValue);
             }
         }
 
@@ -199,6 +201,7 @@ namespace WorkflowCore.Services
 
         private void DetermineNextExecutionTime(WorkflowInstance workflow)
         {
+            //TODO: move to own class
             workflow.NextExecution = null;
 
             if (workflow.Status == WorkflowStatus.Complete)
@@ -212,7 +215,7 @@ namespace WorkflowCore.Services
                     return;
                 }
 
-                long pointerSleep = pointer.SleepUntil.Value.ToUniversalTime().Ticks;
+                var pointerSleep = pointer.SleepUntil.Value.ToUniversalTime().Ticks;
                 workflow.NextExecution = Math.Min(pointerSleep, workflow.NextExecution ?? pointerSleep);
             }
 
@@ -220,25 +223,25 @@ namespace WorkflowCore.Services
             {
                 foreach (var pointer in workflow.ExecutionPointers.Where(x => x.Active && (x.Children ?? new List<string>()).Count > 0))
                 {
-                    if (workflow.ExecutionPointers.Where(x => pointer.Children.Contains(x.Id)).All(x => x.EndTime.HasValue))
+                    if (!workflow.ExecutionPointers.Where(x => x.Scope.Contains(pointer.Id)).All(x => x.EndTime.HasValue)) 
+                        continue;
+                    
+                    if (!pointer.SleepUntil.HasValue)
                     {
-                        if (!pointer.SleepUntil.HasValue)
-                        {
-                            workflow.NextExecution = 0;
-                            return;
-                        }
-
-                        long pointerSleep = pointer.SleepUntil.Value.ToUniversalTime().Ticks;
-                        workflow.NextExecution = Math.Min(pointerSleep, workflow.NextExecution ?? pointerSleep);
+                        workflow.NextExecution = 0;
+                        return;
                     }
+
+                    var pointerSleep = pointer.SleepUntil.Value.ToUniversalTime().Ticks;
+                    workflow.NextExecution = Math.Min(pointerSleep, workflow.NextExecution ?? pointerSleep);
                 }
             }
 
-            if ((workflow.NextExecution == null) && (workflow.ExecutionPointers.All(x => x.EndTime != null)))
-            {
-                workflow.Status = WorkflowStatus.Complete;
-                workflow.CompleteTime = _datetimeProvider.Now.ToUniversalTime();
-            }
+            if ((workflow.NextExecution != null) || (workflow.ExecutionPointers.Any(x => x.EndTime == null))) 
+                return;
+            
+            workflow.Status = WorkflowStatus.Complete;
+            workflow.CompleteTime = _datetimeProvider.Now.ToUniversalTime();
         }
         
     }
