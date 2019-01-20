@@ -8,6 +8,7 @@ using WorkflowCore.Interface;
 using WorkflowCore.Models;
 using System.Reflection;
 using WorkflowCore.Exceptions;
+using WorkflowCore.Models.LifeCycleEvents;
 
 namespace WorkflowCore.Services
 {
@@ -20,6 +21,7 @@ namespace WorkflowCore.Services
         private readonly IWorkflowController _workflowController;
 
         public event StepErrorEventHandler OnStepError;
+        public event LifeCycleEventHandler OnLifeCycleEvent;
 
         // Public dependencies to allow for extension method access.
         public IPersistenceProvider PersistenceStore { get; private set; }
@@ -29,7 +31,10 @@ namespace WorkflowCore.Services
         public IQueueProvider QueueProvider { get; private set; }
         public ILogger Logger { get; private set; }
 
-        public WorkflowHost(IPersistenceProvider persistenceStore, IQueueProvider queueProvider, WorkflowOptions options, ILoggerFactory loggerFactory, IServiceProvider serviceProvider, IWorkflowRegistry registry, IDistributedLockProvider lockProvider, IEnumerable<IBackgroundTask> backgroundTasks, IWorkflowController workflowController)
+        private readonly ILifeCycleEventHub _lifeCycleEventHub;
+        private readonly ISearchIndex _searchIndex;
+
+        public WorkflowHost(IPersistenceProvider persistenceStore, IQueueProvider queueProvider, WorkflowOptions options, ILoggerFactory loggerFactory, IServiceProvider serviceProvider, IWorkflowRegistry registry, IDistributedLockProvider lockProvider, IEnumerable<IBackgroundTask> backgroundTasks, IWorkflowController workflowController, ILifeCycleEventHub lifeCycleEventHub, ISearchIndex searchIndex)
         {
             PersistenceStore = persistenceStore;
             QueueProvider = queueProvider;
@@ -40,9 +45,11 @@ namespace WorkflowCore.Services
             LockProvider = lockProvider;
             _backgroundTasks = backgroundTasks;
             _workflowController = workflowController;
-            persistenceStore.EnsureStoreExists();
+            _searchIndex = searchIndex;
+            _lifeCycleEventHub = lifeCycleEventHub;
+            _lifeCycleEventHub.Subscribe(HandleLifeCycleEvent);
         }
-
+        
         public Task<string> StartWorkflow(string workflowId, object data = null, string reference=null)
         {
             return _workflowController.StartWorkflow(workflowId, data, reference);
@@ -58,8 +65,7 @@ namespace WorkflowCore.Services
         {
             return _workflowController.StartWorkflow<TData>(workflowId, null, data, reference);
         }
-
-
+        
         public Task<string> StartWorkflow<TData>(string workflowId, int? version, TData data = null, string reference=null)
             where TData : class, new()
         {
@@ -77,7 +83,9 @@ namespace WorkflowCore.Services
             PersistenceStore.EnsureStoreExists();
             QueueProvider.Start().Wait();
             LockProvider.Start().Wait();
-
+            _lifeCycleEventHub.Start().Wait();
+            _searchIndex.Start().Wait();
+            
             Logger.LogInformation("Starting backgroud tasks");
 
             foreach (var task in _backgroundTasks)
@@ -94,8 +102,10 @@ namespace WorkflowCore.Services
 
             Logger.LogInformation("Worker tasks stopped");
 
-            QueueProvider.Stop();
-            LockProvider.Stop();
+            QueueProvider.Stop().Wait();
+            LockProvider.Stop().Wait();
+            _searchIndex.Stop().Wait();
+            _lifeCycleEventHub.Stop().Wait();
         }
 
         public void RegisterWorkflow<TWorkflow>()
@@ -126,6 +136,11 @@ namespace WorkflowCore.Services
         public Task<bool> TerminateWorkflow(string workflowId)
         {
             return _workflowController.TerminateWorkflow(workflowId);
+        }
+
+        public void HandleLifeCycleEvent(LifeCycleEvent evt)
+        {
+            OnLifeCycleEvent?.Invoke(evt);
         }
 
         public void ReportStepError(WorkflowInstance workflow, WorkflowStep step, Exception exception)

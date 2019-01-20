@@ -114,10 +114,17 @@ There are several persistence providers available as separate Nuget packages.
 
 * MemoryPersistenceProvider *(Default provider, for demo and testing purposes)*
 * [MongoDB](src/providers/WorkflowCore.Persistence.MongoDB)
+* [Amazon DynamoDB](src/providers/WorkflowCore.Providers.AWS)
 * [SQL Server](src/providers/WorkflowCore.Persistence.SqlServer)
 * [PostgreSQL](src/providers/WorkflowCore.Persistence.PostgreSQL)
 * [Sqlite](src/providers/WorkflowCore.Persistence.Sqlite)
 * Redis *(coming soon...)*
+
+## Search
+
+A search index provider can be plugged in to Workflow Core, enabling you to index your workflows and search against the data and state of them.
+These are also available as separate Nuget packages.
+* [Elasticsearch](src/providers/WorkflowCore.Providers.Elasticsearch)
 
 ## Extensions
 

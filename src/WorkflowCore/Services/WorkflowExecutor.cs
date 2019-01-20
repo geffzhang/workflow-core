@@ -2,13 +2,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Linq.Expressions;
-using System.Reflection;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using WorkflowCore.Interface;
 using WorkflowCore.Models;
-using WorkflowCore.Services.FluentBuilders;
+using WorkflowCore.Models.LifeCycleEvents;
 
 namespace WorkflowCore.Services
 {
@@ -19,15 +17,19 @@ namespace WorkflowCore.Services
         protected readonly IDateTimeProvider _datetimeProvider;
         protected readonly ILogger _logger;
         private readonly IExecutionResultProcessor _executionResultProcessor;
+        private readonly ICancellationProcessor _cancellationProcessor;
+        private readonly ILifeCycleEventPublisher _publisher;
         private readonly WorkflowOptions _options;
 
         private IWorkflowHost Host => _serviceProvider.GetService<IWorkflowHost>();
 
-        public WorkflowExecutor(IWorkflowRegistry registry, IServiceProvider serviceProvider, IDateTimeProvider datetimeProvider, IExecutionResultProcessor executionResultProcessor, WorkflowOptions options, ILoggerFactory loggerFactory)
+        public WorkflowExecutor(IWorkflowRegistry registry, IServiceProvider serviceProvider, IDateTimeProvider datetimeProvider, IExecutionResultProcessor executionResultProcessor, ILifeCycleEventPublisher publisher, ICancellationProcessor cancellationProcessor, WorkflowOptions options, ILoggerFactory loggerFactory)
         {
             _serviceProvider = serviceProvider;
             _registry = registry;
             _datetimeProvider = datetimeProvider;
+            _publisher = publisher;
+            _cancellationProcessor = cancellationProcessor;
             _options = options;
             _logger = loggerFactory.CreateLogger<WorkflowExecutor>();
             _executionResultProcessor = executionResultProcessor;
@@ -47,12 +49,14 @@ namespace WorkflowCore.Services
 
             foreach (var pointer in exePointers)
             {
+                if (pointer.Status == PointerStatus.Cancelled)
+                    continue;
+
                 var step = def.Steps.First(x => x.Id == pointer.StepId);
                 if (step != null)
                 {
                     try
-                    {
-                        pointer.Status = PointerStatus.Running;
+                    {                        
                         switch (step.InitForExecution(wfResult, def, workflow, pointer))
                         {
                             case ExecutionPipelineDirective.Defer:
@@ -61,6 +65,21 @@ namespace WorkflowCore.Services
                                 workflow.Status = WorkflowStatus.Complete;
                                 workflow.CompleteTime = _datetimeProvider.Now.ToUniversalTime();
                                 continue;
+                        }
+
+                        if (pointer.Status != PointerStatus.Running)
+                        {
+                            pointer.Status = PointerStatus.Running;
+                            _publisher.PublishNotification(new StepStarted()
+                            {
+                                EventTimeUtc = _datetimeProvider.Now,
+                                Reference = workflow.Reference,
+                                ExecutionPointerId = pointer.Id,
+                                StepId = step.Id,
+                                WorkflowInstanceId = workflow.Id,
+                                WorkflowDefinitionId = workflow.WorkflowDefinitionId,
+                                Version = workflow.Version
+                            });
                         }
 
                         if (!pointer.StartTime.HasValue)
@@ -95,7 +114,9 @@ namespace WorkflowCore.Services
                             Item = pointer.ContextItem
                         };
 
-                        ProcessInputs(workflow, step, body, context);
+                        foreach (var input in step.Inputs)
+                            input.AssignInput(workflow.Data, body, context);
+
 
                         switch (step.BeforeExecute(wfResult, context, pointer, body))
                         {
@@ -111,7 +132,8 @@ namespace WorkflowCore.Services
 
                         if (result.Proceed)
                         {
-                            ProcessOutputs(workflow, step, body, context);
+                            foreach (var output in step.Outputs)
+                                output.AssignOutput(workflow.Data, body, context);
                         }
 
                         _executionResultProcessor.ProcessExecutionResult(workflow, def, pointer, step, result, wfResult);
@@ -127,10 +149,11 @@ namespace WorkflowCore.Services
                             ErrorTime = _datetimeProvider.Now.ToUniversalTime(),
                             Message = ex.Message
                         });
-
-                        _executionResultProcessor.HandleStepException(workflow, def, pointer, step);
+                        
+                        _executionResultProcessor.HandleStepException(workflow, def, pointer, step, ex);
                         Host.ReportStepError(workflow, step, ex);
                     }
+                    _cancellationProcessor.ProcessCancellations(workflow, def, wfResult);
                 }
                 else
                 {
@@ -151,59 +174,7 @@ namespace WorkflowCore.Services
 
             return wfResult;
         }
-
-        private void ProcessInputs(WorkflowInstance workflow, WorkflowStep step, IStepBody body, IStepExecutionContext context)
-        {
-            //TODO: Move to own class
-            foreach (var input in step.Inputs)
-            {
-                var member = (input.Target.Body as MemberExpression);
-                object resolvedValue = null;
-
-                switch (input.Source.Parameters.Count)
-                {
-                    case 1:
-                        resolvedValue = input.Source.Compile().DynamicInvoke(workflow.Data);
-                        break;
-                    case 2:
-                        resolvedValue = input.Source.Compile().DynamicInvoke(workflow.Data, context);
-                        break;
-                    default:
-                        throw new ArgumentException();
-                }
-
-                step.BodyType.GetProperty(member.Member.Name).SetValue(body, resolvedValue);
-            }
-        }
-
-        private void ProcessOutputs(WorkflowInstance workflow, WorkflowStep step, IStepBody body, IStepExecutionContext context)
-        {
-            foreach (var output in step.Outputs)
-            {
-                var resolvedValue = output.Source.Compile().DynamicInvoke(body);
-                var data = workflow.Data;
-                var setter = ExpressionHelpers.CreateSetter(output.Target);
-                var targetType = setter.Parameters.Last().Type;
-
-                var convertedValue = resolvedValue;
-                // We need to make sure the resolvedValue is of the correct type.
-                // However if the targetType is object we don't need to do anything and in some cases Convert.ChangeType will throw.
-                if (targetType != typeof(object))
-                {
-                    convertedValue = Convert.ChangeType(resolvedValue, targetType);
-                }
-
-                if (setter.Parameters.Count == 2)
-                {
-                    setter.Compile().DynamicInvoke(data, convertedValue);
-                }
-                else
-                {
-                    setter.Compile().DynamicInvoke(data, context, convertedValue);
-                }
-            }
-        }
-
+        
         private void ProcessAfterExecutionIteration(WorkflowInstance workflow, WorkflowDefinition workflowDef, WorkflowExecutorResult workflowResult)
         {
             var pointers = workflow.ExecutionPointers.Where(x => x.EndTime == null);
@@ -239,7 +210,7 @@ namespace WorkflowCore.Services
             {
                 foreach (var pointer in workflow.ExecutionPointers.Where(x => x.Active && (x.Children ?? new List<string>()).Count > 0))
                 {
-                    if (!workflow.ExecutionPointers.Where(x => x.Scope.Contains(pointer.Id)).All(x => x.EndTime.HasValue)) 
+                    if (!workflow.ExecutionPointers.FindByScope(pointer.Id).All(x => x.EndTime.HasValue)) 
                         continue;
                     
                     if (!pointer.SleepUntil.HasValue)
@@ -258,6 +229,14 @@ namespace WorkflowCore.Services
             
             workflow.Status = WorkflowStatus.Complete;
             workflow.CompleteTime = _datetimeProvider.Now.ToUniversalTime();
+            _publisher.PublishNotification(new WorkflowCompleted()
+            {
+                EventTimeUtc = _datetimeProvider.Now,
+                Reference = workflow.Reference,
+                WorkflowInstanceId = workflow.Id,
+                WorkflowDefinitionId = workflow.WorkflowDefinitionId,
+                Version = workflow.Version
+            });
         }
         
     }

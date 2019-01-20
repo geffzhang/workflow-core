@@ -11,6 +11,8 @@ using Amazon.Runtime;
 using WorkflowCore.Interface;
 using WorkflowCore.Persistence.MongoDB.Services;
 using WorkflowCore.Services;
+using Amazon.DynamoDBv2;
+using Amazon.SQS;
 
 namespace WorkflowCore.Sample04
 {
@@ -41,7 +43,7 @@ namespace WorkflowCore.Sample04
             //setup dependency injection
             IServiceCollection services = new ServiceCollection();
             services.AddLogging();
-            services.AddWorkflow();            
+            services.AddWorkflow();
             //services.AddWorkflow(x => x.UseMongoDB(@"mongodb://localhost:27017", "workflow"));
             //services.AddWorkflow(x => x.UseSqlServer(@"Server=.;Database=WorkflowCore;Trusted_Connection=True;", true, true));
             //services.AddWorkflow(x => x.UsePostgreSQL(@"Server=127.0.0.1;Port=5432;Database=workflow;User Id=postgres;", true, true));
@@ -59,7 +61,21 @@ namespace WorkflowCore.Sample04
             //    x.UseSqlServerLocking(@"Server=.\SQLEXPRESS;Database=WorkflowCore;Trusted_Connection=True;");
             //});
 
-            //services.AddWorkflow(x => x.UseRedlock(new System.Net.DnsEndPoint("127.0.0.1", 32768)));
+            //services.AddWorkflow(cfg =>
+            //{
+            //    var ddbConfig = new AmazonDynamoDBConfig() { RegionEndpoint = RegionEndpoint.USWest2 };
+
+            //    cfg.UseAwsDynamoPersistence(new EnvironmentVariablesAWSCredentials(), ddbConfig, "sample4");
+            //    cfg.UseAwsDynamoLocking(new EnvironmentVariablesAWSCredentials(), ddbConfig, "workflow-core-locks");
+            //    cfg.UseAwsSimpleQueueService(new EnvironmentVariablesAWSCredentials(), new AmazonSQSConfig() { RegionEndpoint = RegionEndpoint.USWest2 });                
+            //});
+
+            //services.AddWorkflow(cfg =>
+            //{
+            //    cfg.UseRedisLocking("localhost:6379");
+            //    cfg.UseRedisQueues("localhost:6379", "sample4");
+            //    cfg.UseRedisEventHub("localhost:6379", "channel1");
+            //});
 
             //services.AddWorkflow(x =>
             //{

@@ -69,19 +69,18 @@ namespace WorkflowCore.Services.DefinitionStorage
                 var containerType = typeof(WorkflowStep<>).MakeGenericType(stepType);
                 var targetStep = (containerType.GetConstructor(new Type[] { }).Invoke(null) as WorkflowStep);
 
-                if (!string.IsNullOrEmpty(nextStep.CancelCondition))
-                {
-                    containerType = typeof(CancellableStep<,>).MakeGenericType(stepType, dataType);
-                    var cancelExprType = typeof(Expression<>).MakeGenericType(typeof(Func<,>).MakeGenericType(dataType, typeof(bool)));
-                    var dataParameter = Expression.Parameter(dataType, "data");
-                    var cancelExpr = DynamicExpressionParser.ParseLambda(new[] { dataParameter }, typeof(bool), nextStep.CancelCondition);
-                    targetStep = (containerType.GetConstructor(new Type[] { cancelExprType }).Invoke(new[] { cancelExpr }) as WorkflowStep);
-                }
-
-                if (nextStep.Saga)  //TODO: cancellable saga???
+                if (nextStep.Saga)
                 {
                     containerType = typeof(SagaContainer<>).MakeGenericType(stepType);
                     targetStep = (containerType.GetConstructor(new Type[] { }).Invoke(null) as WorkflowStep);
+                }
+
+                if (!string.IsNullOrEmpty(nextStep.CancelCondition))
+                {
+                    var cancelExprType = typeof(Expression<>).MakeGenericType(typeof(Func<,>).MakeGenericType(dataType, typeof(bool)));
+                    var dataParameter = Expression.Parameter(dataType, "data");
+                    var cancelExpr = DynamicExpressionParser.ParseLambda(new[] { dataParameter }, typeof(bool), nextStep.CancelCondition);
+                    targetStep.CancelCondition = cancelExpr;
                 }
 
                 targetStep.Id = i;
@@ -178,11 +177,7 @@ namespace WorkflowCore.Services.DefinitionStorage
                 var targetProperty = Expression.Property(stepParameter, input.Key);
                 var targetExpr = Expression.Lambda(targetProperty, stepParameter);
 
-                step.Inputs.Add(new DataMapping
-                {
-                    Source = sourceExpr,
-                    Target = targetExpr
-                });
+                step.Inputs.Add(new MemberMapParameter(sourceExpr, targetExpr));
             }
         }
 
@@ -201,20 +196,23 @@ namespace WorkflowCore.Services.DefinitionStorage
                 if (propertyInfo != null)
                 {
                     targetProperty = Expression.Property(dataParameter, propertyInfo);
+                    var targetExpr = Expression.Lambda(targetProperty, dataParameter);
+                    step.Outputs.Add(new MemberMapParameter(sourceExpr, targetExpr));
                 }
                 else
                 {
                     // If we did not find a matching property try to find a Indexer with string parameter
                     propertyInfo = dataType.GetProperty("Item");
                     targetProperty = Expression.Property(dataParameter, propertyInfo, Expression.Constant(output.Key));
-                }
-                var targetExpr = Expression.Lambda(targetProperty, dataParameter);
+                    
+                    Action<IStepBody, object> acn = (pStep, pData) =>
+                    {
+                        object resolvedValue = sourceExpr.Compile().DynamicInvoke(pStep); ;
+                        propertyInfo.SetValue(pData, resolvedValue, new object[] { output.Key });
+                    };
 
-                step.Outputs.Add(new DataMapping
-                {
-                    Source = sourceExpr,
-                    Target = targetExpr
-                });
+                    step.Outputs.Add(new ActionParameter<IStepBody, object>(acn));
+                }
             }
         }
 
