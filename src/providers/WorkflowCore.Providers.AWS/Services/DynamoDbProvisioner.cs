@@ -6,14 +6,14 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Threading.Tasks;
-using WorkflowCore.Interface;
+using WorkflowCore.Providers.AWS.Interface;
 
 namespace WorkflowCore.Providers.AWS.Services
 {
     public class DynamoDbProvisioner : IDynamoDbProvisioner
     {
         private readonly ILogger _logger;
-        private readonly AmazonDynamoDBClient _client;
+        private readonly IAmazonDynamoDB _client;
         private readonly string _tablePrefix;
 
         public DynamoDbProvisioner(AWSCredentials credentials, AmazonDynamoDBConfig config, string tablePrefix, ILoggerFactory logFactory)
