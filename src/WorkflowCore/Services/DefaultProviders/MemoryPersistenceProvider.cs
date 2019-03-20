@@ -8,33 +8,21 @@ using WorkflowCore.Models;
 
 namespace WorkflowCore.Services
 {
-    #pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
+
+    public interface ISingletonMemoryProvider : IPersistenceProvider
+    {
+    }
+#pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
 
     /// <summary>
     /// In-memory implementation of IPersistenceProvider for demo and testing purposes
     /// </summary>
-    public class MemoryPersistenceProvider : IPersistenceProvider
+    public class MemoryPersistenceProvider : ISingletonMemoryProvider
     {
-        private static readonly ConcurrentDictionary<string, Tuple<List<WorkflowInstance>, List<EventSubscription>, List<Event>, List<ExecutionError>>> Environments = 
-                            new ConcurrentDictionary<string, Tuple<List<WorkflowInstance>, List<EventSubscription>, List<Event>, List<ExecutionError>>>();
-        private readonly List<WorkflowInstance> _instances;
-        private readonly List<EventSubscription> _subscriptions;
-        private readonly List<Event> _events;
-        private readonly List<ExecutionError> _errors;
-
-        public MemoryPersistenceProvider()
-            : this("")
-        {
-        }
-
-        public MemoryPersistenceProvider(string environmentKey)
-        {
-            var environment = Environments.GetOrAdd(environmentKey, _ => Tuple.Create(new List<WorkflowInstance>(), new List<EventSubscription>(), new List<Event>(), new List<ExecutionError>()));
-            _instances = environment.Item1;
-            _subscriptions = environment.Item2;
-            _events = environment.Item3;
-            _errors = environment.Item4;
-        }
+        private readonly List<WorkflowInstance> _instances = new List<WorkflowInstance>();
+        private readonly List<EventSubscription> _subscriptions = new List<EventSubscription>();
+        private readonly List<Event> _events = new List<Event>();
+        private readonly List<ExecutionError> _errors = new List<ExecutionError>();
 
         public async Task<string> CreateNewWorkflow(WorkflowInstance workflow)
         {
@@ -70,6 +58,19 @@ namespace WorkflowCore.Services
             lock (_instances)
             {
                 return _instances.First(x => x.Id == Id);
+            }
+        }
+
+        public async Task<IEnumerable<WorkflowInstance>> GetWorkflowInstances(IEnumerable<string> ids)
+        {
+            if (ids == null)
+            {
+                return new List<WorkflowInstance>();
+            }
+
+            lock (_instances)
+            {
+                return _instances.Where(x => ids.Contains(x.Id));
             }
         }
 
@@ -133,7 +134,7 @@ namespace WorkflowCore.Services
         }
 
         public void EnsureStoreExists()
-        {            
+        {
         }
 
         public async Task<string> CreateEvent(Event newEvent)
@@ -145,7 +146,7 @@ namespace WorkflowCore.Services
                 return newEvent.Id;
             }
         }
-        
+
         public async Task MarkEventProcessed(string id)
         {
             lock (_events)
@@ -209,5 +210,5 @@ namespace WorkflowCore.Services
         }
     }
 
-    #pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
+#pragma warning restore CS1998 // Async method lacks 'await' operators and will run synchronously
 }
