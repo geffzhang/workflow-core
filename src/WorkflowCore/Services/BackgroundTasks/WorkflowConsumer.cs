@@ -15,6 +15,7 @@ namespace WorkflowCore.Services.BackgroundTasks
         private readonly ObjectPool<IPersistenceProvider> _persistenceStorePool;
         private readonly ObjectPool<IWorkflowExecutor> _executorPool;
 
+        protected override int MaxConcurrentItems => Options.MaxConcurrentWorkflows;
         protected override QueueType Queue => QueueType.Workflow;
 
         public WorkflowConsumer(IPooledObjectPolicy<IPersistenceProvider> persistencePoolPolicy, IQueueProvider queueProvider, ILoggerFactory loggerFactory, IServiceProvider serviceProvider, IWorkflowRegistry registry, IDistributedLockProvider lockProvider, IPooledObjectPolicy<IWorkflowExecutor> executorPoolPolicy, IDateTimeProvider datetimeProvider, WorkflowOptions options)
@@ -70,7 +71,7 @@ namespace WorkflowCore.Services.BackgroundTasks
 
                         await persistenceStore.PersistErrors(result.Errors);
 
-                        var readAheadTicks = _datetimeProvider.Now.Add(Options.PollInterval).ToUniversalTime().Ticks;
+                        var readAheadTicks = _datetimeProvider.UtcNow.Add(Options.PollInterval).Ticks;
 
                         if ((workflow.Status == WorkflowStatus.Runnable) && workflow.NextExecution.HasValue && workflow.NextExecution.Value < readAheadTicks)
                         {
@@ -91,11 +92,14 @@ namespace WorkflowCore.Services.BackgroundTasks
             Logger.LogDebug("Subscribing to event {0} {1} for workflow {2} step {3}", subscription.EventName, subscription.EventKey, subscription.WorkflowId, subscription.StepId);
             
             await persistenceStore.CreateEventSubscription(subscription);
-            var events = await persistenceStore.GetEvents(subscription.EventName, subscription.EventKey, subscription.SubscribeAsOf);
-            foreach (var evt in events)
+            if (subscription.EventName != Event.EventTypeActivity)
             {
-                await persistenceStore.MarkEventUnprocessed(evt);
-                await QueueProvider.QueueWork(evt, QueueType.Event);
+                var events = await persistenceStore.GetEvents(subscription.EventName, subscription.EventKey, subscription.SubscribeAsOf);
+                foreach (var evt in events)
+                {
+                    await persistenceStore.MarkEventUnprocessed(evt);
+                    await QueueProvider.QueueWork(evt, QueueType.Event);
+                }
             }
         }
 
@@ -108,7 +112,7 @@ namespace WorkflowCore.Services.BackgroundTasks
                     return;
                 }
 
-                var target = (workflow.NextExecution.Value - _datetimeProvider.Now.ToUniversalTime().Ticks);
+                var target = (workflow.NextExecution.Value - _datetimeProvider.UtcNow.Ticks);
                 if (target > 0)
                 {
                     await Task.Delay(TimeSpan.FromTicks(target), cancellationToken);
@@ -118,7 +122,7 @@ namespace WorkflowCore.Services.BackgroundTasks
             }
             catch (Exception ex)
             {
-                Logger.LogError(ex.Message);
+                Logger.LogError(ex, ex.Message);
             }
         }
     }

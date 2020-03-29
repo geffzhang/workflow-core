@@ -51,7 +51,7 @@ namespace WorkflowCore.Sample04
 
             //services.AddWorkflow(x =>
             //{
-            //    x.UseAzureSyncronization(@"UseDevelopmentStorage=true");
+            //    x.UseAzureSynchronization(@"UseDevelopmentStorage=true");
             //    x.UseMongoDB(@"mongodb://localhost:27017", "workflow9999");
             //});
 
@@ -88,9 +88,6 @@ namespace WorkflowCore.Sample04
 
             var serviceProvider = services.BuildServiceProvider();
 
-            //config logging
-            var loggerFactory = serviceProvider.GetService<ILoggerFactory>();
-            loggerFactory.AddDebug(LogLevel.Debug);
             return serviceProvider;
         }
 

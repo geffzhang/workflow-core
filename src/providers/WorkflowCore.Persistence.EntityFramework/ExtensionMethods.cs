@@ -26,8 +26,7 @@ namespace WorkflowCore.Persistence.EntityFramework
             persistable.WorkflowDefinitionId = instance.WorkflowDefinitionId;
             persistable.Status = instance.Status;
             persistable.CreateTime = instance.CreateTime;
-            persistable.CompleteTime = instance.CompleteTime;
-            persistable.ExecutionPointers = new PersistedExecutionPointerCollection(instance.ExecutionPointers.Count);
+            persistable.CompleteTime = instance.CompleteTime;            
             
             foreach (var ep in instance.ExecutionPointers)
             {
@@ -101,9 +100,14 @@ namespace WorkflowCore.Persistence.EntityFramework
             result.EventKey = instance.EventKey;
             result.EventName = instance.EventName;
             result.StepId = instance.StepId;
+            result.ExecutionPointerId = instance.ExecutionPointerId;
             result.WorkflowId = instance.WorkflowId;
             result.SubscribeAsOf = DateTime.SpecifyKind(instance.SubscribeAsOf, DateTimeKind.Utc);
-
+            result.SubscriptionData = JsonConvert.SerializeObject(instance.SubscriptionData, SerializerSettings);
+            result.ExternalToken = instance.ExternalToken;
+            result.ExternalTokenExpiry = instance.ExternalTokenExpiry;
+            result.ExternalWorkerId = instance.ExternalWorkerId;
+            
             return result;
         }
 
@@ -193,8 +197,13 @@ namespace WorkflowCore.Persistence.EntityFramework
             result.EventKey = instance.EventKey;
             result.EventName = instance.EventName;
             result.StepId = instance.StepId;
+            result.ExecutionPointerId = instance.ExecutionPointerId;
             result.WorkflowId = instance.WorkflowId;
             result.SubscribeAsOf = DateTime.SpecifyKind(instance.SubscribeAsOf, DateTimeKind.Utc);
+            result.SubscriptionData = JsonConvert.DeserializeObject(instance.SubscriptionData, SerializerSettings);
+            result.ExternalToken = instance.ExternalToken;
+            result.ExternalTokenExpiry = instance.ExternalTokenExpiry;
+            result.ExternalWorkerId = instance.ExternalWorkerId;
 
             return result;
         }

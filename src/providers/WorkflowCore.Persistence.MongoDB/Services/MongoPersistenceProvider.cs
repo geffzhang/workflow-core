@@ -1,13 +1,13 @@
-﻿using MongoDB.Bson;
-using MongoDB.Bson.Serialization;
+﻿using MongoDB.Bson.Serialization;
 using MongoDB.Bson.Serialization.IdGenerators;
-using MongoDB.Bson.Serialization.Serializers;
 using MongoDB.Driver;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Linq.Expressions;
 using System.Threading.Tasks;
+using MongoDB.Bson;
+using MongoDB.Bson.Serialization.Conventions;
+using MongoDB.Driver.Linq;
 using WorkflowCore.Interface;
 using WorkflowCore.Models;
 
@@ -15,6 +15,7 @@ namespace WorkflowCore.Persistence.MongoDB.Services
 {
     public class MongoPersistenceProvider : IPersistenceProvider
     {
+        internal const string WorkflowCollectionName = "wfc.workflows";
         private readonly IMongoDatabase _database;
 
         public MongoPersistenceProvider(IMongoDatabase database)
@@ -25,6 +26,13 @@ namespace WorkflowCore.Persistence.MongoDB.Services
 
         static MongoPersistenceProvider()
         {
+            ConventionRegistry.Register(
+                "workflow.conventions",
+                new ConventionPack
+                {
+                    new EnumRepresentationConvention(BsonType.String)
+                }, t => t.FullName?.StartsWith("WorkflowCore") ?? false);
+
             BsonClassMap.RegisterClassMap<WorkflowInstance>(x =>
             {
                 x.MapIdProperty(y => y.Id)
@@ -49,8 +57,13 @@ namespace WorkflowCore.Persistence.MongoDB.Services
                 x.MapProperty(y => y.EventName);
                 x.MapProperty(y => y.EventKey);
                 x.MapProperty(y => y.StepId);
+                x.MapProperty(y => y.ExecutionPointerId);
                 x.MapProperty(y => y.WorkflowId);
                 x.MapProperty(y => y.SubscribeAsOf);
+                x.MapProperty(y => y.SubscriptionData);
+                x.MapProperty(y => y.ExternalToken);
+                x.MapProperty(y => y.ExternalTokenExpiry);
+                x.MapProperty(y => y.ExternalWorkerId);
             });
 
             BsonClassMap.RegisterClassMap<Event>(x =>
@@ -73,13 +86,32 @@ namespace WorkflowCore.Persistence.MongoDB.Services
         {
             if (!indexesCreated)
             {
-                instance.WorkflowInstances.Indexes.CreateOne(Builders<WorkflowInstance>.IndexKeys.Ascending(x => x.NextExecution), new CreateIndexOptions() { Background = true, Name = "idx_nextExec" });
-                instance.Events.Indexes.CreateOne(Builders<Event>.IndexKeys.Ascending(x => x.IsProcessed), new CreateIndexOptions() { Background = true, Name = "idx_processed" });
+                instance.WorkflowInstances.Indexes.CreateOne(new CreateIndexModel<WorkflowInstance>(
+                    Builders<WorkflowInstance>.IndexKeys.Ascending(x => x.NextExecution),
+                    new CreateIndexOptions {Background = true, Name = "idx_nextExec"}));
+
+                instance.Events.Indexes.CreateOne(new CreateIndexModel<Event>(
+                    Builders<Event>.IndexKeys.Ascending(x => x.IsProcessed),
+                    new CreateIndexOptions {Background = true, Name = "idx_processed"}));
+
+                instance.Events.Indexes.CreateOne(new CreateIndexModel<Event>(
+                    Builders<Event>.IndexKeys
+                        .Ascending(x => x.EventName)
+                        .Ascending(x => x.EventKey)
+                        .Ascending(x => x.EventTime),
+                    new CreateIndexOptions { Background = true, Name = "idx_namekey" }));
+
+                instance.EventSubscriptions.Indexes.CreateOne(new CreateIndexModel<EventSubscription>(
+                    Builders<EventSubscription>.IndexKeys
+                        .Ascending(x => x.EventName)
+                        .Ascending(x => x.EventKey),
+                    new CreateIndexOptions { Background = true, Name = "idx_namekey" }));
+
                 indexesCreated = true;
             }
         }
 
-        private IMongoCollection<WorkflowInstance> WorkflowInstances => _database.GetCollection<WorkflowInstance>("wfc.workflows");
+        private IMongoCollection<WorkflowInstance> WorkflowInstances => _database.GetCollection<WorkflowInstance>(WorkflowCollectionName);
 
         private IMongoCollection<EventSubscription> EventSubscriptions => _database.GetCollection<EventSubscription>("wfc.subscriptions");
 
@@ -127,7 +159,7 @@ namespace WorkflowCore.Persistence.MongoDB.Services
 
         public async Task<IEnumerable<WorkflowInstance>> GetWorkflowInstances(WorkflowStatus? status, string type, DateTime? createdFrom, DateTime? createdTo, int skip, int take)
         {
-            IQueryable<WorkflowInstance> result = WorkflowInstances.AsQueryable();
+            IMongoQueryable<WorkflowInstance> result = WorkflowInstances.AsQueryable();
 
             if (status.HasValue)
                 result = result.Where(x => x.Status == status.Value);
@@ -141,7 +173,7 @@ namespace WorkflowCore.Persistence.MongoDB.Services
             if (createdTo.HasValue)
                 result = result.Where(x => x.CreateTime <= createdTo.Value);
 
-            return result.Skip(skip).Take(take).ToList();
+            return await result.Skip(skip).Take(take).ToListAsync();
         }
 
         public async Task<string> CreateEventSubscription(EventSubscription subscription)
@@ -155,12 +187,47 @@ namespace WorkflowCore.Persistence.MongoDB.Services
             await EventSubscriptions.DeleteOneAsync(x => x.Id == eventSubscriptionId);
         }
 
+        public async Task<EventSubscription> GetSubscription(string eventSubscriptionId)
+        {
+            var result = await EventSubscriptions.FindAsync(x => x.Id == eventSubscriptionId);
+            return await result.FirstOrDefaultAsync();
+        }
+
+        public async Task<EventSubscription> GetFirstOpenSubscription(string eventName, string eventKey, DateTime asOf)
+        {
+            var query = EventSubscriptions
+                .Find(x => x.EventName == eventName && x.EventKey == eventKey && x.SubscribeAsOf <= asOf && x.ExternalToken == null);
+
+            return await query.FirstOrDefaultAsync();
+        }
+
+        public async Task<bool> SetSubscriptionToken(string eventSubscriptionId, string token, string workerId, DateTime expiry)
+        {
+            var update = Builders<EventSubscription>.Update
+                .Set(x => x.ExternalToken, token)
+                .Set(x => x.ExternalTokenExpiry, expiry)
+                .Set(x => x.ExternalWorkerId, workerId);
+
+            var result = await EventSubscriptions.UpdateOneAsync(x => x.Id == eventSubscriptionId && x.ExternalToken == null, update);
+            return (result.ModifiedCount > 0);
+        }
+
+        public async Task ClearSubscriptionToken(string eventSubscriptionId, string token)
+        {
+            var update = Builders<EventSubscription>.Update
+                .Set(x => x.ExternalToken, null)
+                .Set(x => x.ExternalTokenExpiry, null)
+                .Set(x => x.ExternalWorkerId, null);
+
+            await EventSubscriptions.UpdateOneAsync(x => x.Id == eventSubscriptionId && x.ExternalToken == token, update);
+        }
+
         public void EnsureStoreExists()
         {
 
         }
 
-        public async Task<IEnumerable<EventSubscription>> GetSubcriptions(string eventName, string eventKey, DateTime asOf)
+        public async Task<IEnumerable<EventSubscription>> GetSubscriptions(string eventName, string eventKey, DateTime asOf)
         {
             var query = EventSubscriptions
                 .Find(x => x.EventName == eventName && x.EventKey == eventKey && x.SubscribeAsOf <= asOf);

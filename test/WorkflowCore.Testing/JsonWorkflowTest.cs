@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using WorkflowCore.Interface;
 using WorkflowCore.Models;
+using WorkflowCore.Services.DefinitionStorage;
 
 namespace WorkflowCore.Testing
 {
@@ -51,11 +52,12 @@ namespace WorkflowCore.Testing
         protected virtual void ConfigureServices(IServiceCollection services)
         {
             services.AddWorkflow();
+            services.AddWorkflowDSL();
         }
 
         public string StartWorkflow(string json, object data)
         {
-            var def = DefinitionLoader.LoadDefinition(json);
+            var def = DefinitionLoader.LoadDefinition(json, Deserializers.Json);
             var workflowId = Host.StartWorkflow(def.Id, data).Result;
             return workflowId;
         }
@@ -74,7 +76,7 @@ namespace WorkflowCore.Testing
 
         protected IEnumerable<EventSubscription> GetActiveSubscriptons(string eventName, string eventKey)
         {
-            return PersistenceProvider.GetSubcriptions(eventName, eventKey, DateTime.MaxValue).Result;
+            return PersistenceProvider.GetSubscriptions(eventName, eventKey, DateTime.MaxValue).Result;
         }
 
         protected void WaitForEventSubscription(string eventName, string eventKey, TimeSpan timeOut)

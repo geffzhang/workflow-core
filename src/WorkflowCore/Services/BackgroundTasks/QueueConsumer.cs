@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -77,6 +78,8 @@ namespace WorkflowCore.Services.BackgroundTasks
                     if (activeTasks.ContainsKey(item))
                     {
                         secondPasses.Add(item);
+                        if (!EnableSecondPasses)
+                            await QueueProvider.QueueWork(item, Queue);
                         continue;
                     }
 
@@ -113,11 +116,12 @@ namespace WorkflowCore.Services.BackgroundTasks
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogError(ex.Message);
+                    Logger.LogError(ex, ex.Message);
                 }
             }
 
-            await Task.WhenAll(activeTasks.Values);
+            foreach (var task in activeTasks.Values)
+                task.Wait();
         }
 
         private async Task ExecuteItem(string itemId)

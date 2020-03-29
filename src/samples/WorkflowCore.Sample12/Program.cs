@@ -17,7 +17,7 @@ namespace WorkflowCore.Sample12
             host.Start();
 
             Console.WriteLine("Starting workflow...");
-            string workflowId = host.StartWorkflow("outcome-sample").Result;
+            host.StartWorkflow("outcome-sample", new MyData() { Value = 2 });
 
 
             Console.ReadLine();
@@ -37,9 +37,6 @@ namespace WorkflowCore.Sample12
 
             var serviceProvider = services.BuildServiceProvider();
 
-            //config logging
-            var loggerFactory = serviceProvider.GetService<ILoggerFactory>();
-            loggerFactory.AddDebug(LogLevel.Debug);
             return serviceProvider;
         }
     }

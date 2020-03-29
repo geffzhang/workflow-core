@@ -2,11 +2,18 @@
 
 [![Build status](https://ci.appveyor.com/api/projects/status/xnby6p5v4ur04u76?svg=true)](https://ci.appveyor.com/project/danielgerlag/workflow-core)
 
-Workflow Core is a light weight workflow engine targeting .NET Standard.  Think: long running processes with multiple tasks that need to track state.  It supports pluggable persistence and concurrency providers to allow for multi-node clusters.
+Workflow Core is a light weight embeddable workflow engine targeting .NET Standard.  Think: long running processes with multiple tasks that need to track state.  It supports pluggable persistence and concurrency providers to allow for multi-node clusters.
+
+### Announcements
+
+#### New related project: Conductor
+Conductor is a stand-alone workflow server as opposed to a library that uses Workflow Core internally. It exposes an API that allows you to store workflow definitions, track running workflows, manage events and define custom steps and scripts for usage in your workflows.
+
+https://github.com/danielgerlag/conductor
 
 ## Documentation
 
-See [Tutorial here.](https://github.com/danielgerlag/workflow-core/wiki)
+See [Tutorial here.](https://workflow-core.readthedocs.io)
 
 ## Fluent API
 
@@ -25,9 +32,9 @@ public class MyWorkflow : IWorkflow
 }
 ```
 
-## JSON Workflow Definitions
+## JSON / YAML Workflow Definitions
 
-Define your workflows in JSON
+Define your workflows in JSON or YAML
 
 ```json
 {
@@ -45,6 +52,17 @@ Define your workflows in JSON
     }
   ]
 }
+```
+
+```yaml
+Id: HelloWorld
+Version: 1
+Steps:
+- Id: Hello
+  StepType: MyApp.HelloWorld, MyApp
+  NextStepId: Bye
+- Id: Bye
+  StepType: MyApp.GoodbyeWorld, MyApp
 ```
 
 ### Sample use cases
@@ -148,6 +166,8 @@ These are also available as separate Nuget packages.
 
 * [Events](src/samples/WorkflowCore.Sample04)
 
+* [Activity Workers](src/samples/WorkflowCore.Sample18)
+
 * [Parallel Tasks](src/samples/WorkflowCore.Sample13)
 
 * [Saga Transactions (with compensation)](src/samples/WorkflowCore.Sample17)
@@ -176,12 +196,15 @@ These are also available as separate Nuget packages.
 * **Aaron Scribner**
 * **Roberto Paterlini**
 
+## Related Projects
+
+* [Conductor](https://github.com/danielgerlag/conductor) (Stand-alone workflow server built on Workflow Core)
+
 ## Ports
 
 * [JWorkflow (Java)](https://github.com/danielgerlag/jworkflow)
 * [workflow-es (Node.js)](https://github.com/danielgerlag/workflow-es)
 * [liteflow (Python)](https://github.com/danielgerlag/liteflow)
-* [workflow_rb (Ruby)](https://github.com/danielgerlag/workflow_rb)
 
 ## License
 

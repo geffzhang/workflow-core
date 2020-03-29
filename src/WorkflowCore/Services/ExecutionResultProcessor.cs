@@ -33,7 +33,7 @@ namespace WorkflowCore.Services
             pointer.Outcome = result.OutcomeValue;
             if (result.SleepFor.HasValue)
             {
-                pointer.SleepUntil = _datetimeProvider.Now.ToUniversalTime().Add(result.SleepFor.Value);
+                pointer.SleepUntil = _datetimeProvider.UtcNow.Add(result.SleepFor.Value);
                 pointer.Status = PointerStatus.Sleeping;
             }
 
@@ -48,26 +48,28 @@ namespace WorkflowCore.Services
                 {
                     WorkflowId = workflow.Id,
                     StepId = pointer.StepId,
+                    ExecutionPointerId = pointer.Id,
                     EventName = pointer.EventName,
                     EventKey = pointer.EventKey,
-                    SubscribeAsOf = result.EventAsOf
+                    SubscribeAsOf = result.EventAsOf,
+                    SubscriptionData = result.SubscriptionData
                 });
             }
 
             if (result.Proceed)
             {
                 pointer.Active = false;
-                pointer.EndTime = _datetimeProvider.Now.ToUniversalTime();
+                pointer.EndTime = _datetimeProvider.UtcNow;
                 pointer.Status = PointerStatus.Complete;
-
-                foreach (var outcomeTarget in step.Outcomes.Where(x => object.Equals(x.GetValue(workflow.Data), result.OutcomeValue) || x.GetValue(workflow.Data) == null))
+                                
+                foreach (var outcomeTarget in step.Outcomes.Where(x => x.Matches(result, workflow.Data)))
                 {                    
                     workflow.ExecutionPointers.Add(_pointerFactory.BuildNextPointer(def, pointer, outcomeTarget));
                 }
 
                 _eventPublisher.PublishNotification(new StepCompleted()
                 {
-                    EventTimeUtc = _datetimeProvider.Now,
+                    EventTimeUtc = _datetimeProvider.UtcNow,
                     Reference = workflow.Reference,
                     ExecutionPointerId = pointer.Id,
                     StepId = step.Id,
@@ -92,7 +94,7 @@ namespace WorkflowCore.Services
         {
             _eventPublisher.PublishNotification(new WorkflowError()
             {
-                EventTimeUtc = _datetimeProvider.Now,
+                EventTimeUtc = _datetimeProvider.UtcNow,
                 Reference = workflow.Reference,
                 WorkflowInstanceId = workflow.Id,
                 WorkflowDefinitionId = workflow.WorkflowDefinitionId,

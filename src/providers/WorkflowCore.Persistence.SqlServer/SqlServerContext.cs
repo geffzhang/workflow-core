@@ -16,12 +16,9 @@ namespace WorkflowCore.Persistence.SqlServer
         public SqlServerContext(string connectionString)
             : base()
         {
-            if (!connectionString.Contains("MultipleActiveResultSets"))
-                connectionString += ";MultipleActiveResultSets=True";
-
             _connectionString = connectionString;
         }
-
+        
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
             base.OnConfiguring(optionsBuilder);

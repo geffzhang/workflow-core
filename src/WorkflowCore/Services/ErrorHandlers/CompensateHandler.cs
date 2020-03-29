@@ -60,7 +60,7 @@ namespace WorkflowCore.Services.ErrorHandlers
                 }
 
                 scopePointer.Active = false;
-                scopePointer.EndTime = _datetimeProvider.Now.ToUniversalTime();
+                scopePointer.EndTime = _datetimeProvider.UtcNow;
                 scopePointer.Status = PointerStatus.Failed;
 
                 if (scopeStep.CompensationStepId.HasValue)
@@ -72,7 +72,7 @@ namespace WorkflowCore.Services.ErrorHandlers
 
                     if (resume)
                     {
-                        foreach (var outcomeTarget in scopeStep.Outcomes.Where(x => x.GetValue(workflow.Data) == null))
+                        foreach (var outcomeTarget in scopeStep.Outcomes.Where(x => x.Matches(workflow.Data)))
                             workflow.ExecutionPointers.Add(_pointerFactory.BuildNextPointer(def, scopePointer, outcomeTarget));
                     }
                 }

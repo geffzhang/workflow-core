@@ -8,11 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using WorkflowCore.Interface;
 using WorkflowCore.Models;
 using System.Text;
-using Amazon;
-using Amazon.DynamoDBv2;
-using Amazon.Runtime;
-using Nest;
-using WorkflowCore.Models.Search;
+using WorkflowCore.Services.DefinitionStorage;
 
 namespace ScratchPad
 {
@@ -24,29 +20,21 @@ namespace ScratchPad
 
             //start the workflow host
             var host = serviceProvider.GetService<IWorkflowHost>();
-            var searchIndex = serviceProvider.GetService<ISearchIndex>();
-
-            host.RegisterWorkflow<WorkflowCore.Sample03.PassingDataWorkflow, WorkflowCore.Sample03.MyDataClass>();
-            host.RegisterWorkflow<WorkflowCore.Sample04.EventSampleWorkflow, WorkflowCore.Sample04.MyDataClass>();
-
+            var loader = serviceProvider.GetService<IDefinitionLoader>();
+            var activityController = serviceProvider.GetService<IActivityController>();
+            host.RegisterWorkflow<Test01Workflow, WfData>();
+            //loader.LoadDefinition(Properties.Resources.HelloWorld, Deserializers.Json);
+            
             host.Start();
-            var data1 = new WorkflowCore.Sample03.MyDataClass() { Value1 = 2, Value2 = 3 };
-            host.StartWorkflow("PassingDataWorkflow", data1, "quick dog").Wait();
+            
+            host.StartWorkflow("Test01", 1, new WfData()
+            {
+                Value1 = "two",
+                Value2 = "data2"
+            });
 
-            var data2 = new WorkflowCore.Sample04.MyDataClass() { Value1 = "test" };
-            host.StartWorkflow("EventSampleWorkflow", data2, "alt1 boom").Wait();
-
-
-            var searchResult1 = searchIndex.Search("dog", 0, 10).Result;
-            var searchResult2 = searchIndex.Search("quick dog", 0, 10).Result;
-            var searchResult3 = searchIndex.Search("fast", 0, 10).Result;
-            var searchResult4 = searchIndex.Search("alt1", 0, 10).Result;
-            var searchResult5 = searchIndex.Search("dogs", 0, 10).Result;
-            var searchResult6 = searchIndex.Search("test", 0, 10).Result;
-            var searchResult7 = searchIndex.Search("", 0, 10).Result;
-            var searchResult8 = searchIndex.Search("", 0, 10, ScalarFilter.Equals(x => x.Reference, "quick dog")).Result;
-            var searchResult9 = searchIndex.Search("", 0, 10, ScalarFilter.Equals<WorkflowCore.Sample03.MyDataClass>(x => x.Value1, 2)).Result;
-
+            
+            
             Console.ReadLine();
             host.Stop();
         }
@@ -62,22 +50,84 @@ namespace ScratchPad
             {
                 //var ddbConfig = new AmazonDynamoDBConfig() { RegionEndpoint = RegionEndpoint.USWest2 };
                 //cfg.UseAwsDynamoPersistence(new EnvironmentVariablesAWSCredentials(), ddbConfig, "elastic");
-                cfg.UseElasticsearch(new ConnectionSettings(new Uri("http://localhost:9200")), "workflows");
+                //cfg.UseElasticsearch(new ConnectionSettings(new Uri("http://localhost:9200")), "workflows");
                 //cfg.UseAwsSimpleQueueService(new EnvironmentVariablesAWSCredentials(), new AmazonSQSConfig() { RegionEndpoint = RegionEndpoint.USWest2 });
                 //cfg.UseAwsDynamoLocking(new EnvironmentVariablesAWSCredentials(), new AmazonDynamoDBConfig() { RegionEndpoint = RegionEndpoint.USWest2 }, "workflow-core-locks");
             });
+            services.AddWorkflowDSL();
 
-            services.AddTransient<WorkflowCore.Sample01.Steps.GoodbyeWorld>();
-
+            
             var serviceProvider = services.BuildServiceProvider();
 
-            //config logging
-            var loggerFactory = serviceProvider.GetService<ILoggerFactory>();
-            loggerFactory.AddDebug();
             return serviceProvider;
         }
 
     }
+    
+    public class HelloWorld : StepBody
+    {
+        public override ExecutionResult Run(IStepExecutionContext context)
+        {
+            Console.WriteLine("Hello world");
+            return ExecutionResult.Next();
+        }
+    }
+    
+    public class CustomMessage : StepBody
+    {
         
+        public string Message { get; set; }
+
+        public override ExecutionResult Run(IStepExecutionContext context)
+        {
+            Console.WriteLine(Message);
+            return ExecutionResult.Next();
+        }
+    }
+     
+    public class WfData
+    {
+        public string Value1 { get; set; }
+        public string Value2 { get; set; }
+        public string Value3 { get; set; }
+    } 
+    
+    public class Test01Workflow : IWorkflow<WfData>
+    {
+        public void Build(IWorkflowBuilder<WfData> builder)
+        {
+            var branch1 = builder.CreateBranch()
+                .StartWith<CustomMessage>()
+                    .Input(step => step.Message, data => "hi from 1")
+                .Then<CustomMessage>()
+                    .Input(step => step.Message, data => "bye from 1");
+
+            var branch2 = builder.CreateBranch()
+                .StartWith<CustomMessage>()
+                    .Input(step => step.Message, data => "hi from 2")
+                .Then<CustomMessage>()
+                    .Input(step => step.Message, data => "bye from 2");
+
+
+            builder
+                .StartWith<HelloWorld>()
+                .Then((context) =>
+                {
+                    Console.WriteLine("------1");
+                    Task.Delay(TimeSpan.FromSeconds(20)).Wait();
+                    Console.WriteLine("------2");
+                    return ExecutionResult.Next();
+                })
+                .Decide(data => data.Value1)
+                    .Branch((data, outcome) => data.Value1 == "one", branch1)
+                    .Branch((data, outcome) => data.Value1 == "two", branch2);
+        }
+
+        public string Id => "Test01";
+            
+        public int Version => 1;
+                 
+    }
+    
 }
 

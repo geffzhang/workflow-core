@@ -10,7 +10,7 @@ namespace WorkflowCore.TestAssets
     public static class Utils
     {
         private static JsonSerializerSettings SerializerSettings = new JsonSerializerSettings() { TypeNameHandling = TypeNameHandling.All, DateFormatHandling = DateFormatHandling.IsoDateFormat, DateTimeZoneHandling = DateTimeZoneHandling.Utc };
-              
+
         public static T DeepCopy<T>(T obj)
         {
             string str = JsonConvert.SerializeObject(obj, SerializerSettings);
@@ -20,13 +20,22 @@ namespace WorkflowCore.TestAssets
 
         public static string GetTestDefinitionJson()
         {
-            //return Properties.Resources.ResourceManager.GetString("stored_definition");
             return File.ReadAllText("stored-definition.json");
+        }
+
+        public static string GetTestDefinitionYaml()
+        {
+            return File.ReadAllText("stored-definition.yaml");
         }
 
         public static string GetTestDefinitionDynamicJson()
         {
             return File.ReadAllText("stored-dynamic-definition.json");
+        }
+
+        public static string GetTestDefinitionJsonMissingInputProperty()
+        {
+            return File.ReadAllText("stored-def-missing-input-property.json");
         }
     }
 }

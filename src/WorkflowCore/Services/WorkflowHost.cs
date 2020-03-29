@@ -19,6 +19,7 @@ namespace WorkflowCore.Services
 
         private readonly IEnumerable<IBackgroundTask> _backgroundTasks;
         private readonly IWorkflowController _workflowController;
+        private readonly IActivityController _activityController;
 
         public event StepErrorEventHandler OnStepError;
         public event LifeCycleEventHandler OnLifeCycleEvent;
@@ -34,7 +35,7 @@ namespace WorkflowCore.Services
         private readonly ILifeCycleEventHub _lifeCycleEventHub;
         private readonly ISearchIndex _searchIndex;
 
-        public WorkflowHost(IPersistenceProvider persistenceStore, IQueueProvider queueProvider, WorkflowOptions options, ILoggerFactory loggerFactory, IServiceProvider serviceProvider, IWorkflowRegistry registry, IDistributedLockProvider lockProvider, IEnumerable<IBackgroundTask> backgroundTasks, IWorkflowController workflowController, ILifeCycleEventHub lifeCycleEventHub, ISearchIndex searchIndex)
+        public WorkflowHost(IPersistenceProvider persistenceStore, IQueueProvider queueProvider, WorkflowOptions options, ILoggerFactory loggerFactory, IServiceProvider serviceProvider, IWorkflowRegistry registry, IDistributedLockProvider lockProvider, IEnumerable<IBackgroundTask> backgroundTasks, IWorkflowController workflowController, ILifeCycleEventHub lifeCycleEventHub, ISearchIndex searchIndex, IActivityController activityController)
         {
             PersistenceStore = persistenceStore;
             QueueProvider = queueProvider;
@@ -46,6 +47,7 @@ namespace WorkflowCore.Services
             _backgroundTasks = backgroundTasks;
             _workflowController = workflowController;
             _searchIndex = searchIndex;
+            _activityController = activityController;
             _lifeCycleEventHub = lifeCycleEventHub;
             _lifeCycleEventHub.Subscribe(HandleLifeCycleEvent);
         }
@@ -79,20 +81,30 @@ namespace WorkflowCore.Services
 
         public void Start()
         {
+            StartAsync(CancellationToken.None).Wait();
+        }
+        
+        public async Task StartAsync(CancellationToken cancellationToken)
+        {
             _shutdown = false;
             PersistenceStore.EnsureStoreExists();
-            QueueProvider.Start().Wait();
-            LockProvider.Start().Wait();
-            _lifeCycleEventHub.Start().Wait();
-            _searchIndex.Start().Wait();
+            await QueueProvider.Start();
+            await LockProvider.Start();
+            await _lifeCycleEventHub.Start();
+            await _searchIndex.Start();
             
-            Logger.LogInformation("Starting backgroud tasks");
+            Logger.LogInformation("Starting background tasks");
 
             foreach (var task in _backgroundTasks)
                 task.Start();
         }
 
         public void Stop()
+        {
+            StopAsync(CancellationToken.None).Wait();
+        }
+        
+        public async Task StopAsync(CancellationToken cancellationToken)
         {
             _shutdown = true;
 
@@ -102,10 +114,10 @@ namespace WorkflowCore.Services
 
             Logger.LogInformation("Worker tasks stopped");
 
-            QueueProvider.Stop().Wait();
-            LockProvider.Stop().Wait();
-            _searchIndex.Stop().Wait();
-            _lifeCycleEventHub.Stop().Wait();
+            await QueueProvider.Stop();
+            await LockProvider.Stop();
+            await _searchIndex.Stop();
+            await _lifeCycleEventHub.Stop();
         }
 
         public void RegisterWorkflow<TWorkflow>()
@@ -152,6 +164,26 @@ namespace WorkflowCore.Services
         {
             if (!_shutdown)
                 Stop();
+        }
+
+        public Task<PendingActivity> GetPendingActivity(string activityName, string workerId, TimeSpan? timeout = null)
+        {
+            return _activityController.GetPendingActivity(activityName, workerId, timeout);
+        }
+
+        public Task ReleaseActivityToken(string token)
+        {
+            return _activityController.ReleaseActivityToken(token);
+        }
+
+        public Task SubmitActivitySuccess(string token, object result)
+        {
+            return _activityController.SubmitActivitySuccess(token, result);
+        }
+
+        public Task SubmitActivityFailure(string token, object result)
+        {
+            return _activityController.SubmitActivityFailure(token, result);
         }
     }
 }
