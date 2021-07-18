@@ -1,4 +1,4 @@
-# Foreach sample
+# Foreach Parallel sample
 
 Illustrates how to implement a parallel foreach within your workflow.
 
@@ -14,7 +14,7 @@ builder
 	.Then<SayGoodbye>();
 ```
 
-or get the collectioin from workflow data.
+or get the collection from workflow data.
 
 ```c#
 builder

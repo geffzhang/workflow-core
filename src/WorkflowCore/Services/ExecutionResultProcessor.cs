@@ -44,7 +44,7 @@ namespace WorkflowCore.Services
                 pointer.Active = false;
                 pointer.Status = PointerStatus.WaitingForEvent;
 
-                workflowResult.Subscriptions.Add(new EventSubscription()
+                workflowResult.Subscriptions.Add(new EventSubscription
                 {
                     WorkflowId = workflow.Id,
                     StepId = pointer.StepId,
@@ -67,7 +67,17 @@ namespace WorkflowCore.Services
                     workflow.ExecutionPointers.Add(_pointerFactory.BuildNextPointer(def, pointer, outcomeTarget));
                 }
 
-                _eventPublisher.PublishNotification(new StepCompleted()
+                var pendingSubsequents = workflow.ExecutionPointers
+                    .FindByStatus(PointerStatus.PendingPredecessor)
+                    .Where(x => x.PredecessorId == pointer.Id);
+
+                foreach (var subsequent in pendingSubsequents)
+                {
+                    subsequent.Status = PointerStatus.Pending;
+                    subsequent.Active = true;
+                }
+
+                _eventPublisher.PublishNotification(new StepCompleted
                 {
                     EventTimeUtc = _datetimeProvider.UtcNow,
                     Reference = workflow.Reference,
@@ -92,7 +102,7 @@ namespace WorkflowCore.Services
 
         public void HandleStepException(WorkflowInstance workflow, WorkflowDefinition def, ExecutionPointer pointer, WorkflowStep step, Exception exception)
         {
-            _eventPublisher.PublishNotification(new WorkflowError()
+            _eventPublisher.PublishNotification(new WorkflowError
             {
                 EventTimeUtc = _datetimeProvider.UtcNow,
                 Reference = workflow.Reference,

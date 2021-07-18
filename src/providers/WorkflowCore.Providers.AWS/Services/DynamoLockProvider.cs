@@ -23,39 +23,41 @@ namespace WorkflowCore.Providers.AWS.Services
         private Task _heartbeatTask;
         private CancellationTokenSource _cancellationTokenSource;
         private readonly AutoResetEvent _mutex = new AutoResetEvent(true);
+        private readonly IDateTimeProvider _dateTimeProvider;
 
-        public DynamoLockProvider(AWSCredentials credentials, AmazonDynamoDBConfig config, string tableName, ILoggerFactory logFactory)
+        public DynamoLockProvider(AWSCredentials credentials, AmazonDynamoDBConfig config, string tableName, ILoggerFactory logFactory, IDateTimeProvider dateTimeProvider)
         {
             _logger = logFactory.CreateLogger<DynamoLockProvider>();
             _client = new AmazonDynamoDBClient(credentials, config);
             _localLocks = new List<string>();
             _tableName = tableName;
             _nodeId = Guid.NewGuid().ToString();
+            _dateTimeProvider = dateTimeProvider;
         }
 
         public async Task<bool> AcquireLock(string Id, CancellationToken cancellationToken)
         {
             try
             {
-                var req = new PutItemRequest()
+                var req = new PutItemRequest
                 {
                     TableName = _tableName,
                     Item = new Dictionary<string, AttributeValue>
                     {
                         { "id", new AttributeValue(Id) },
                         { "lock_owner", new AttributeValue(_nodeId) },
-                        { "expires", new AttributeValue()
+                        { "expires", new AttributeValue
                             {
-                                N = Convert.ToString(new DateTimeOffset(DateTime.UtcNow).ToUnixTimeMilliseconds() + _ttl)
+                                N = Convert.ToString(new DateTimeOffset(_dateTimeProvider.UtcNow).ToUnixTimeMilliseconds() + _ttl)
                             }
                         }
                     },
                     ConditionExpression = "attribute_not_exists(id) OR (expires < :expired)",
                     ExpressionAttributeValues = new Dictionary<string, AttributeValue>
                     {
-                        { ":expired", new AttributeValue()
+                        { ":expired", new AttributeValue
                             {
-                                N = Convert.ToString(new DateTimeOffset(DateTime.UtcNow).ToUnixTimeMilliseconds() + _jitter)
+                                N = Convert.ToString(new DateTimeOffset(_dateTimeProvider.UtcNow).ToUnixTimeMilliseconds() + _jitter)
                             }
                         }
                     }
@@ -89,7 +91,7 @@ namespace WorkflowCore.Providers.AWS.Services
             
             try
             {
-                var req = new DeleteItemRequest()
+                var req = new DeleteItemRequest
                 {
                     TableName = _tableName,
                     Key = new Dictionary<string, AttributeValue>
@@ -152,9 +154,9 @@ namespace WorkflowCore.Providers.AWS.Services
                                     {
                                         { "id", new AttributeValue(item) },
                                         { "lock_owner", new AttributeValue(_nodeId) },
-                                        { "expires", new AttributeValue()
+                                        { "expires", new AttributeValue
                                             {
-                                                N = Convert.ToString(new DateTimeOffset(DateTime.UtcNow).ToUnixTimeMilliseconds() + _ttl)
+                                                N = Convert.ToString(new DateTimeOffset(_dateTimeProvider.UtcNow).ToUnixTimeMilliseconds() + _ttl)
                                             }
                                         }
                                     },
@@ -202,12 +204,12 @@ namespace WorkflowCore.Providers.AWS.Services
 
         private async Task CreateTable()
         {
-            var createRequest = new CreateTableRequest(_tableName, new List<KeySchemaElement>()
+            var createRequest = new CreateTableRequest(_tableName, new List<KeySchemaElement>
             {
                 new KeySchemaElement("id", KeyType.HASH)
             })
             {
-                AttributeDefinitions = new List<AttributeDefinition>()
+                AttributeDefinitions = new List<AttributeDefinition>
                 {
                     new AttributeDefinition("id", ScalarAttributeType.S)
                 },

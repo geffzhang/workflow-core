@@ -16,13 +16,15 @@ namespace WorkflowCore.Services.BackgroundTasks
         private readonly IEventRepository _eventRepository;
         private readonly IDistributedLockProvider _lockProvider;
         private readonly IDateTimeProvider _datetimeProvider;
+        private readonly IGreyList _greylist;
         protected override int MaxConcurrentItems => 2;
         protected override QueueType Queue => QueueType.Event;
 
-        public EventConsumer(IWorkflowRepository workflowRepository, ISubscriptionRepository subscriptionRepository, IEventRepository eventRepository, IQueueProvider queueProvider, ILoggerFactory loggerFactory, IServiceProvider serviceProvider, IWorkflowRegistry registry, IDistributedLockProvider lockProvider, WorkflowOptions options, IDateTimeProvider datetimeProvider)
+        public EventConsumer(IWorkflowRepository workflowRepository, ISubscriptionRepository subscriptionRepository, IEventRepository eventRepository, IQueueProvider queueProvider, ILoggerFactory loggerFactory, IServiceProvider serviceProvider, IWorkflowRegistry registry, IDistributedLockProvider lockProvider, WorkflowOptions options, IDateTimeProvider datetimeProvider, IGreyList greylist)
             : base(queueProvider, loggerFactory, options)
         {
             _workflowRepository = workflowRepository;
+            _greylist = greylist;
             _subscriptionRepository = subscriptionRepository;
             _eventRepository = eventRepository;
             _lockProvider = lockProvider;
@@ -40,34 +42,39 @@ namespace WorkflowCore.Services.BackgroundTasks
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var evt = await _eventRepository.GetEvent(itemId);
+                var evt = await _eventRepository.GetEvent(itemId, cancellationToken);
+                if (evt.IsProcessed)
+                {
+                    _greylist.Add($"evt:{evt.Id}");
+                    return;
+                }
                 if (evt.EventTime <= _datetimeProvider.UtcNow)
                 {
                     IEnumerable<EventSubscription> subs = null;
                     if (evt.EventData is ActivityResult)
                     {
-                        var activity = await _subscriptionRepository.GetSubscription((evt.EventData as ActivityResult).SubscriptionId);
+                        var activity = await _subscriptionRepository.GetSubscription((evt.EventData as ActivityResult).SubscriptionId, cancellationToken);
                         if (activity == null)
                         {
                             Logger.LogWarning($"Activity already processed - {(evt.EventData as ActivityResult).SubscriptionId}");
-                            await _eventRepository.MarkEventProcessed(itemId);
+                            await _eventRepository.MarkEventProcessed(itemId, cancellationToken);
                             return;
                         }
-                        subs = new List<EventSubscription>() { activity };
+                        subs = new List<EventSubscription> { activity };
                     }
                     else
                     {
-                        subs = await _subscriptionRepository.GetSubscriptions(evt.EventName, evt.EventKey, evt.EventTime);
+                        subs = await _subscriptionRepository.GetSubscriptions(evt.EventName, evt.EventKey, evt.EventTime, cancellationToken);
                     }
 
-                    var toQueue = new List<string>();
+                    var toQueue = new HashSet<string>();
                     var complete = true;
 
                     foreach (var sub in subs.ToList())
                         complete = complete && await SeedSubscription(evt, sub, toQueue, cancellationToken);
 
                     if (complete)
-                        await _eventRepository.MarkEventProcessed(itemId);
+                        await _eventRepository.MarkEventProcessed(itemId, cancellationToken);
 
                     foreach (var eventId in toQueue)
                         await QueueProvider.QueueWork(eventId, QueueType.Event);
@@ -79,14 +86,14 @@ namespace WorkflowCore.Services.BackgroundTasks
             }
         }
         
-        private async Task<bool> SeedSubscription(Event evt, EventSubscription sub, List<string> toQueue, CancellationToken cancellationToken)
+        private async Task<bool> SeedSubscription(Event evt, EventSubscription sub, HashSet<string> toQueue, CancellationToken cancellationToken)
         {            
-            foreach (var eventId in await _eventRepository.GetEvents(sub.EventName, sub.EventKey, sub.SubscribeAsOf))
+            foreach (var eventId in await _eventRepository.GetEvents(sub.EventName, sub.EventKey, sub.SubscribeAsOf, cancellationToken))
             {
                 if (eventId == evt.Id)
                     continue;
 
-                var siblingEvent = await _eventRepository.GetEvent(eventId);
+                var siblingEvent = await _eventRepository.GetEvent(eventId, cancellationToken);
                 if ((!siblingEvent.IsProcessed) && (siblingEvent.EventTime < evt.EventTime))
                 {
                     await QueueProvider.QueueWork(eventId, QueueType.Event);
@@ -105,7 +112,7 @@ namespace WorkflowCore.Services.BackgroundTasks
             
             try
             {
-                var workflow = await _workflowRepository.GetWorkflowInstance(sub.WorkflowId);
+                var workflow = await _workflowRepository.GetWorkflowInstance(sub.WorkflowId, cancellationToken);
                 IEnumerable<ExecutionPointer> pointers = null;
                 
                 if (!string.IsNullOrEmpty(sub.ExecutionPointerId))
@@ -120,8 +127,8 @@ namespace WorkflowCore.Services.BackgroundTasks
                     p.Active = true;
                 }
                 workflow.NextExecution = 0;
-                await _workflowRepository.PersistWorkflow(workflow);
-                await _subscriptionRepository.TerminateSubscription(sub.Id);
+                await _workflowRepository.PersistWorkflow(workflow, cancellationToken);
+                await _subscriptionRepository.TerminateSubscription(sub.Id, cancellationToken);
                 return true;
             }
             catch (Exception ex)

@@ -6,8 +6,6 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using WorkflowCore.Interface;
 using WorkflowCore.Models;
-using System.Reflection;
-using WorkflowCore.Exceptions;
 using WorkflowCore.Models.LifeCycleEvents;
 
 namespace WorkflowCore.Services
@@ -49,7 +47,6 @@ namespace WorkflowCore.Services
             _searchIndex = searchIndex;
             _activityController = activityController;
             _lifeCycleEventHub = lifeCycleEventHub;
-            _lifeCycleEventHub.Subscribe(HandleLifeCycleEvent);
         }
         
         public Task<string> StartWorkflow(string workflowId, object data = null, string reference=null)
@@ -93,6 +90,10 @@ namespace WorkflowCore.Services
             await _lifeCycleEventHub.Start();
             await _searchIndex.Start();
             
+            // Event subscriptions are removed when stopping the event hub.
+            // Add them when starting.
+            AddEventSubscriptions();
+
             Logger.LogInformation("Starting background tasks");
 
             foreach (var task in _backgroundTasks)
@@ -121,18 +122,16 @@ namespace WorkflowCore.Services
         }
 
         public void RegisterWorkflow<TWorkflow>()
-            where TWorkflow : IWorkflow, new()
+            where TWorkflow : IWorkflow
         {
-            TWorkflow wf = new TWorkflow();
-            Registry.RegisterWorkflow(wf);
+            _workflowController.RegisterWorkflow<TWorkflow>();
         }
 
         public void RegisterWorkflow<TWorkflow, TData>()
-            where TWorkflow : IWorkflow<TData>, new()
+            where TWorkflow : IWorkflow<TData>
             where TData : new()
         {
-            TWorkflow wf = new TWorkflow();
-            Registry.RegisterWorkflow<TData>(wf);
+            _workflowController.RegisterWorkflow<TWorkflow, TData>();
         }
 
         public Task<bool> SuspendWorkflow(string workflowId)
@@ -184,6 +183,11 @@ namespace WorkflowCore.Services
         public Task SubmitActivityFailure(string token, object result)
         {
             return _activityController.SubmitActivityFailure(token, result);
+        }
+
+        private void AddEventSubscriptions()
+        {
+            _lifeCycleEventHub.Subscribe(HandleLifeCycleEvent);
         }
     }
 }

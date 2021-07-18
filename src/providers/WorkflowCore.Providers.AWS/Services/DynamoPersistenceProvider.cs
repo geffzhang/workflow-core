@@ -5,11 +5,11 @@ using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 using WorkflowCore.Providers.AWS.Interface;
 using WorkflowCore.Interface;
 using WorkflowCore.Models;
+using System.Threading;
 
 namespace WorkflowCore.Providers.AWS.Services
 {
@@ -32,39 +32,39 @@ namespace WorkflowCore.Providers.AWS.Services
             _provisioner = provisioner;
         }
 
-        public async Task<string> CreateNewWorkflow(WorkflowInstance workflow)
+        public async Task<string> CreateNewWorkflow(WorkflowInstance workflow, CancellationToken cancellationToken = default)
         {
             workflow.Id = Guid.NewGuid().ToString();
 
-            var req = new PutItemRequest()
+            var req = new PutItemRequest
             {
                 TableName = $"{_tablePrefix}-{WORKFLOW_TABLE}",
                 Item = workflow.ToDynamoMap(),
                 ConditionExpression = "attribute_not_exists(id)"
             };
 
-            var response = await _client.PutItemAsync(req);
+            var _ = await _client.PutItemAsync(req, cancellationToken);
 
             return workflow.Id;
         }
 
-        public async Task PersistWorkflow(WorkflowInstance workflow)
+        public async Task PersistWorkflow(WorkflowInstance workflow, CancellationToken cancellationToken = default)
         {
-            var request = new PutItemRequest()
+            var request = new PutItemRequest
             {
                 TableName = $"{_tablePrefix}-{WORKFLOW_TABLE}",
                 Item = workflow.ToDynamoMap()
             };
 
-            var response = await _client.PutItemAsync(request);
+            var response = await _client.PutItemAsync(request, cancellationToken);
         }
 
-        public async Task<IEnumerable<string>> GetRunnableInstances(DateTime asAt)
+        public async Task<IEnumerable<string>> GetRunnableInstances(DateTime asAt, CancellationToken cancellationToken = default)
         {
             var result = new List<string>();
             var now = asAt.ToUniversalTime().Ticks;
 
-            var request = new QueryRequest()
+            var request = new QueryRequest
             {
                 TableName = $"{_tablePrefix}-{WORKFLOW_TABLE}",
                 IndexName = "ix_runnable",
@@ -73,13 +73,13 @@ namespace WorkflowCore.Providers.AWS.Services
                 ExpressionAttributeValues = new Dictionary<string, AttributeValue>
                 {
                     {
-                        ":r", new AttributeValue()
+                        ":r", new AttributeValue
                         {
                             N = 1.ToString()
                         }
                     },
                     {
-                        ":effective_date", new AttributeValue()
+                        ":effective_date", new AttributeValue
                         {
                             N = Convert.ToString(now)
                         }
@@ -88,7 +88,7 @@ namespace WorkflowCore.Providers.AWS.Services
                 ScanIndexForward = true
             };
 
-            var response = await _client.QueryAsync(request);
+            var response = await _client.QueryAsync(request, cancellationToken);
 
             foreach (var item in response.Items)
             {
@@ -103,9 +103,9 @@ namespace WorkflowCore.Providers.AWS.Services
             throw new NotImplementedException();
         }
 
-        public async Task<WorkflowInstance> GetWorkflowInstance(string Id)
+        public async Task<WorkflowInstance> GetWorkflowInstance(string Id, CancellationToken cancellationToken = default)
         {
-            var req = new GetItemRequest()
+            var req = new GetItemRequest
             {
                 TableName = $"{_tablePrefix}-{WORKFLOW_TABLE}",
                 Key = new Dictionary<string, AttributeValue>
@@ -113,22 +113,22 @@ namespace WorkflowCore.Providers.AWS.Services
                     { "id", new AttributeValue(Id) }
                 }
             };
-            var response = await _client.GetItemAsync(req);
+            var response = await _client.GetItemAsync(req, cancellationToken);
 
             return response.Item.ToWorkflowInstance();
         }
 
-        public async Task<IEnumerable<WorkflowInstance>> GetWorkflowInstances(IEnumerable<string> ids)
+        public async Task<IEnumerable<WorkflowInstance>> GetWorkflowInstances(IEnumerable<string> ids, CancellationToken cancellationToken = default)
         {
             if (ids == null)
             {
                 return new List<WorkflowInstance>();
             }
 
-            var keys = new KeysAndAttributes() { Keys = new List<Dictionary<string, AttributeValue>>() };
+            var keys = new KeysAndAttributes { Keys = new List<Dictionary<string, AttributeValue>>() };
             foreach (var id in ids)
             {
-                var key = new Dictionary<string, AttributeValue>()
+                var key = new Dictionary<string, AttributeValue>
                 {
                     {
                         "id", new AttributeValue { S = id }
@@ -139,7 +139,7 @@ namespace WorkflowCore.Providers.AWS.Services
 
             var request = new BatchGetItemRequest
             {
-                RequestItems = new Dictionary<string, KeysAndAttributes>()
+                RequestItems = new Dictionary<string, KeysAndAttributes>
                 {
                     {
                         $"{_tablePrefix}-{WORKFLOW_TABLE}", keys
@@ -151,7 +151,7 @@ namespace WorkflowCore.Providers.AWS.Services
             BatchGetItemResponse response;
             do
             {
-                response = await _client.BatchGetItemAsync(request);
+                response = await _client.BatchGetItemAsync(request, cancellationToken);
                 foreach (var tableResponse in response.Responses)
                     result.AddRange(tableResponse.Value);
 
@@ -161,28 +161,28 @@ namespace WorkflowCore.Providers.AWS.Services
             return result.Select(i => i.ToWorkflowInstance());
         }
 
-        public async Task<string> CreateEventSubscription(EventSubscription subscription)
+        public async Task<string> CreateEventSubscription(EventSubscription subscription, CancellationToken cancellationToken = default)
         {
             subscription.Id = Guid.NewGuid().ToString();
 
-            var req = new PutItemRequest()
+            var req = new PutItemRequest
             {
                 TableName = $"{_tablePrefix}-{SUBCRIPTION_TABLE}",
                 Item = subscription.ToDynamoMap(),
                 ConditionExpression = "attribute_not_exists(id)"
             };
 
-            var response = await _client.PutItemAsync(req);
+            var response = await _client.PutItemAsync(req, cancellationToken);
 
             return subscription.Id;
         }
 
-        public async Task<IEnumerable<EventSubscription>> GetSubscriptions(string eventName, string eventKey, DateTime asOf)
+        public async Task<IEnumerable<EventSubscription>> GetSubscriptions(string eventName, string eventKey, DateTime asOf, CancellationToken cancellationToken = default)
         {
             var result = new List<EventSubscription>();
             var asOfTicks = asOf.ToUniversalTime().Ticks;
 
-            var request = new QueryRequest()
+            var request = new QueryRequest
             {
                 TableName = $"{_tablePrefix}-{SUBCRIPTION_TABLE}",
                 IndexName = "ix_slug",
@@ -194,7 +194,7 @@ namespace WorkflowCore.Providers.AWS.Services
                         ":slug", new AttributeValue($"{eventName}:{eventKey}")
                     },
                     {
-                        ":as_of", new AttributeValue()
+                        ":as_of", new AttributeValue
                         {
                             N = Convert.ToString(asOfTicks)
                         }
@@ -203,7 +203,7 @@ namespace WorkflowCore.Providers.AWS.Services
                 ScanIndexForward = true
             };
 
-            var response = await _client.QueryAsync(request);
+            var response = await _client.QueryAsync(request, cancellationToken);
 
             foreach (var item in response.Items)
             {
@@ -213,9 +213,9 @@ namespace WorkflowCore.Providers.AWS.Services
             return result;
         }
 
-        public async Task TerminateSubscription(string eventSubscriptionId)
+        public async Task TerminateSubscription(string eventSubscriptionId, CancellationToken cancellationToken = default)
         {
-            var request = new DeleteItemRequest()
+            var request = new DeleteItemRequest
             {
                 TableName = $"{_tablePrefix}-{SUBCRIPTION_TABLE}",
                 Key = new Dictionary<string, AttributeValue>
@@ -223,28 +223,28 @@ namespace WorkflowCore.Providers.AWS.Services
                     { "id", new AttributeValue(eventSubscriptionId) }
                 }
             };
-            await _client.DeleteItemAsync(request);
+            await _client.DeleteItemAsync(request, cancellationToken);
         }
 
-        public async Task<string> CreateEvent(Event newEvent)
+        public async Task<string> CreateEvent(Event newEvent, CancellationToken cancellationToken = default)
         {
             newEvent.Id = Guid.NewGuid().ToString();
 
-            var req = new PutItemRequest()
+            var req = new PutItemRequest
             {
                 TableName = $"{_tablePrefix}-{EVENT_TABLE}",
                 Item = newEvent.ToDynamoMap(),
                 ConditionExpression = "attribute_not_exists(id)"
             };
 
-            var response = await _client.PutItemAsync(req);
+            var _ = await _client.PutItemAsync(req, cancellationToken);
 
             return newEvent.Id;
         }
 
-        public async Task<Event> GetEvent(string id)
+        public async Task<Event> GetEvent(string id, CancellationToken cancellationToken = default)
         {
-            var req = new GetItemRequest()
+            var req = new GetItemRequest
             {
                 TableName = $"{_tablePrefix}-{EVENT_TABLE}",
                 Key = new Dictionary<string, AttributeValue>
@@ -252,17 +252,17 @@ namespace WorkflowCore.Providers.AWS.Services
                     { "id", new AttributeValue(id) }
                 }
             };
-            var response = await _client.GetItemAsync(req);
+            var response = await _client.GetItemAsync(req, cancellationToken);
 
             return response.Item.ToEvent();
         }
 
-        public async Task<IEnumerable<string>> GetRunnableEvents(DateTime asAt)
+        public async Task<IEnumerable<string>> GetRunnableEvents(DateTime asAt, CancellationToken cancellationToken = default)
         {
             var result = new List<string>();
             var now = asAt.ToUniversalTime().Ticks;
 
-            var request = new QueryRequest()
+            var request = new QueryRequest
             {
                 TableName = $"{_tablePrefix}-{EVENT_TABLE}",
                 IndexName = "ix_not_processed",
@@ -270,9 +270,9 @@ namespace WorkflowCore.Providers.AWS.Services
                 KeyConditionExpression = "not_processed = :n and event_time <= :effectiveDate",
                 ExpressionAttributeValues = new Dictionary<string, AttributeValue>
                 {
-                    { ":n" , new AttributeValue() { N = 1.ToString() } },
+                    { ":n" , new AttributeValue { N = 1.ToString() } },
                     {
-                        ":effectiveDate", new AttributeValue()
+                        ":effectiveDate", new AttributeValue
                         {
                             N = Convert.ToString(now)
                         }
@@ -281,7 +281,7 @@ namespace WorkflowCore.Providers.AWS.Services
                 ScanIndexForward = true
             };
 
-            var response = await _client.QueryAsync(request);
+            var response = await _client.QueryAsync(request, cancellationToken);
 
             foreach (var item in response.Items)
             {
@@ -291,12 +291,12 @@ namespace WorkflowCore.Providers.AWS.Services
             return result;
         }
 
-        public async Task<IEnumerable<string>> GetEvents(string eventName, string eventKey, DateTime asOf)
+        public async Task<IEnumerable<string>> GetEvents(string eventName, string eventKey, DateTime asOf, CancellationToken cancellationToken)
         {
             var result = new List<string>();
             var asOfTicks = asOf.ToUniversalTime().Ticks;
 
-            var request = new QueryRequest()
+            var request = new QueryRequest
             {
                 TableName = $"{_tablePrefix}-{EVENT_TABLE}",
                 IndexName = "ix_slug",
@@ -308,7 +308,7 @@ namespace WorkflowCore.Providers.AWS.Services
                         ":slug", new AttributeValue($"{eventName}:{eventKey}")
                     },
                     {
-                        ":effective_date", new AttributeValue()
+                        ":effective_date", new AttributeValue
                         {
                             N = Convert.ToString(asOfTicks)
                         }
@@ -317,7 +317,7 @@ namespace WorkflowCore.Providers.AWS.Services
                 ScanIndexForward = true
             };
 
-            var response = await _client.QueryAsync(request);
+            var response = await _client.QueryAsync(request, cancellationToken);
 
             foreach (var item in response.Items)
             {
@@ -327,9 +327,9 @@ namespace WorkflowCore.Providers.AWS.Services
             return result;
         }
 
-        public async Task MarkEventProcessed(string id)
+        public async Task MarkEventProcessed(string id, CancellationToken cancellationToken = default)
         {
-            var request = new UpdateItemRequest()
+            var request = new UpdateItemRequest
             {
                 TableName = $"{_tablePrefix}-{EVENT_TABLE}",
                 Key = new Dictionary<string, AttributeValue>
@@ -338,12 +338,12 @@ namespace WorkflowCore.Providers.AWS.Services
                 },
                 UpdateExpression = "REMOVE not_processed"
             };
-            await _client.UpdateItemAsync(request);
+            await _client.UpdateItemAsync(request, cancellationToken);
         }
 
-        public async Task MarkEventUnprocessed(string id)
+        public async Task MarkEventUnprocessed(string id, CancellationToken cancellationToken = default)
         {
-            var request = new UpdateItemRequest()
+            var request = new UpdateItemRequest
             {
                 TableName = $"{_tablePrefix}-{EVENT_TABLE}",
                 Key = new Dictionary<string, AttributeValue>
@@ -351,15 +351,15 @@ namespace WorkflowCore.Providers.AWS.Services
                     { "id", new AttributeValue(id) }
                 },
                 UpdateExpression = "ADD not_processed = :n",
-                ExpressionAttributeValues = new Dictionary<string, AttributeValue>()
+                ExpressionAttributeValues = new Dictionary<string, AttributeValue>
                 {
-                    { ":n" , new AttributeValue() { N = 1.ToString() } }
+                    { ":n" , new AttributeValue { N = 1.ToString() } }
                 }
             };
-            await _client.UpdateItemAsync(request);
+            await _client.UpdateItemAsync(request, cancellationToken);
         }
 
-        public Task PersistErrors(IEnumerable<ExecutionError> errors)
+        public Task PersistErrors(IEnumerable<ExecutionError> errors, CancellationToken _ = default)
         {
             //TODO
             return Task.CompletedTask;
@@ -370,9 +370,9 @@ namespace WorkflowCore.Providers.AWS.Services
             _provisioner.ProvisionTables().Wait();
         }
 
-        public async Task<EventSubscription> GetSubscription(string eventSubscriptionId)
+        public async Task<EventSubscription> GetSubscription(string eventSubscriptionId, CancellationToken cancellationToken = default)
         {
-            var req = new GetItemRequest()
+            var req = new GetItemRequest
             {
                 TableName = $"{_tablePrefix}-{SUBCRIPTION_TABLE}",
                 Key = new Dictionary<string, AttributeValue>
@@ -380,17 +380,17 @@ namespace WorkflowCore.Providers.AWS.Services
                     { "id", new AttributeValue(eventSubscriptionId) }
                 }
             };
-            var response = await _client.GetItemAsync(req);
+            var response = await _client.GetItemAsync(req, cancellationToken);
 
             return response.Item.ToEventSubscription();
         }
 
-        public async Task<EventSubscription> GetFirstOpenSubscription(string eventName, string eventKey, DateTime asOf)
+        public async Task<EventSubscription> GetFirstOpenSubscription(string eventName, string eventKey, DateTime asOf, CancellationToken cancellationToken = default)
         {
             var result = new List<EventSubscription>();
             var asOfTicks = asOf.ToUniversalTime().Ticks;
 
-            var request = new QueryRequest()
+            var request = new QueryRequest
             {
                 TableName = $"{_tablePrefix}-{SUBCRIPTION_TABLE}",
                 IndexName = "ix_slug",
@@ -404,7 +404,7 @@ namespace WorkflowCore.Providers.AWS.Services
                         ":slug", new AttributeValue($"{eventName}:{eventKey}")
                     },
                     {
-                        ":as_of", new AttributeValue()
+                        ":as_of", new AttributeValue
                         {
                             N = Convert.ToString(asOfTicks)
                         }
@@ -413,7 +413,7 @@ namespace WorkflowCore.Providers.AWS.Services
                 ScanIndexForward = true
             };
 
-            var response = await _client.QueryAsync(request);
+            var response = await _client.QueryAsync(request, cancellationToken);
 
             foreach (var item in response.Items)
                 result.Add(item.ToEventSubscription());
@@ -421,9 +421,9 @@ namespace WorkflowCore.Providers.AWS.Services
             return result.FirstOrDefault();
         }
 
-        public async Task<bool> SetSubscriptionToken(string eventSubscriptionId, string token, string workerId, DateTime expiry)
+        public async Task<bool> SetSubscriptionToken(string eventSubscriptionId, string token, string workerId, DateTime expiry, CancellationToken cancellationToken = default)
         {
-            var request = new UpdateItemRequest()
+            var request = new UpdateItemRequest
             {
                 TableName = $"{_tablePrefix}-{SUBCRIPTION_TABLE}",
                 Key = new Dictionary<string, AttributeValue>
@@ -432,16 +432,16 @@ namespace WorkflowCore.Providers.AWS.Services
                 },
                 UpdateExpression = "SET external_token = :external_token, external_worker_id = :external_worker_id, external_token_expiry = :external_token_expiry",
                 ConditionExpression = "attribute_not_exists(external_token)",
-                ExpressionAttributeValues = new Dictionary<string, AttributeValue>()
+                ExpressionAttributeValues = new Dictionary<string, AttributeValue>
                 {
-                    { ":external_token" , new AttributeValue() { S = token } },
-                    { ":external_worker_id" , new AttributeValue() { S = workerId } },
-                    { ":external_token_expiry" , new AttributeValue() { N = expiry.Ticks.ToString() } }
+                    { ":external_token" , new AttributeValue { S = token } },
+                    { ":external_worker_id" , new AttributeValue { S = workerId } },
+                    { ":external_token_expiry" , new AttributeValue { N = expiry.Ticks.ToString() } }
                 }
             };
             try
             {
-                await _client.UpdateItemAsync(request);
+                await _client.UpdateItemAsync(request, cancellationToken);
                 return true;
             }
             catch (ConditionalCheckFailedException)
@@ -450,9 +450,9 @@ namespace WorkflowCore.Providers.AWS.Services
             }
         }
 
-        public async Task ClearSubscriptionToken(string eventSubscriptionId, string token)
+        public async Task ClearSubscriptionToken(string eventSubscriptionId, string token, CancellationToken cancellationToken = default)
         {
-            var request = new UpdateItemRequest()
+            var request = new UpdateItemRequest
             {
                 TableName = $"{_tablePrefix}-{SUBCRIPTION_TABLE}",
                 Key = new Dictionary<string, AttributeValue>
@@ -461,13 +461,13 @@ namespace WorkflowCore.Providers.AWS.Services
                 },
                 UpdateExpression = "REMOVE external_token, external_worker_id, external_token_expiry",
                 ConditionExpression = "external_token = :external_token",
-                ExpressionAttributeValues = new Dictionary<string, AttributeValue>()
+                ExpressionAttributeValues = new Dictionary<string, AttributeValue>
                 {
-                    { ":external_token" , new AttributeValue() { S = token } },
+                    { ":external_token" , new AttributeValue { S = token } },
                 }
             };
             
-            await _client.UpdateItemAsync(request);
+            await _client.UpdateItemAsync(request, cancellationToken);
         }
     }
 }

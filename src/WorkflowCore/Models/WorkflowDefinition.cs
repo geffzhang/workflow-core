@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
 
 
 namespace WorkflowCore.Models
@@ -18,14 +17,17 @@ namespace WorkflowCore.Models
 
         public WorkflowErrorHandling DefaultErrorBehavior { get; set; }
 
-        public TimeSpan? DefaultErrorRetryInterval { get; set; }                
+        public Type OnPostMiddlewareError { get; set; }
+        public Type OnExecuteMiddlewareError { get; set; }
+
+        public TimeSpan? DefaultErrorRetryInterval { get; set; }
 
     }
 
-    public enum WorkflowErrorHandling 
-    { 
-        Retry = 0, 
-        Suspend = 1, 
+    public enum WorkflowErrorHandling
+    {
+        Retry = 0,
+        Suspend = 1,
         Terminate = 2,
         Compensate = 3
     }

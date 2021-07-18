@@ -1,7 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Net;
-using System.Text;
 using Docker.Testify;
 using Nest;
 using Xunit;
@@ -43,7 +41,7 @@ namespace WorkflowCore.Tests.Elasticsearch
     }
 
     [CollectionDefinition("Elasticsearch collection")]
-    public class DynamoDbCollection : ICollectionFixture<ElasticsearchDockerSetup>
+    public class ElasticsearchCollection : ICollectionFixture<ElasticsearchDockerSetup>
     {
     }
 }

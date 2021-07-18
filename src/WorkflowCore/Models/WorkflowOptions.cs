@@ -16,7 +16,7 @@ namespace WorkflowCore.Models
         internal TimeSpan PollInterval;
         internal TimeSpan IdleTime;
         internal TimeSpan ErrorRetryInterval;
-        internal int MaxConcurrentWorkflows = Math.Max(Environment.ProcessorCount, 2);
+        internal int MaxConcurrentWorkflows = Math.Max(Environment.ProcessorCount, 4);
 
         public IServiceCollection Services { get; private set; }
 
@@ -33,6 +33,11 @@ namespace WorkflowCore.Models
             SearchIndexFactory = new Func<IServiceProvider, ISearchIndex>(sp => new NullSearchIndex());
             EventHubFactory = new Func<IServiceProvider, ILifeCycleEventHub>(sp => new SingleNodeEventHub(sp.GetService<ILoggerFactory>()));
         }
+
+        public bool EnableWorkflows { get; set; } = true;
+        public bool EnableEvents { get; set; } = true;
+        public bool EnableIndexes { get; set; } = true;
+        public bool EnablePolling { get; set; } = true;
 
         public void UsePersistence(Func<IServiceProvider, IPersistenceProvider> factory)
         {

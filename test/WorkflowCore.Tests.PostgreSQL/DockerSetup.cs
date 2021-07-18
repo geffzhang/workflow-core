@@ -1,10 +1,5 @@
-﻿using Docker.DotNet;
-using Docker.DotNet.Models;
-using System;
+﻿using System;
 using System.Collections.Generic;
-using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading;
 using Docker.Testify;
 using Npgsql;
 using Xunit;
@@ -19,6 +14,10 @@ namespace WorkflowCore.Tests.PostgreSQL
         public override string ImageName => "postgres";
         public override int InternalPort => 5432;
 
+        private const string PostgresHostAuthMethod = "trust";
+        public override IList<string> EnvironmentVariables => new List<string> {
+            $"POSTGRES_HOST_AUTH_METHOD={PostgresHostAuthMethod}"
+        };
         public override void PublishConnectionInfo()
         {
             ConnectionString = $"Server=127.0.0.1;Port={ExternalPort};Database=workflow;User Id=postgres;";

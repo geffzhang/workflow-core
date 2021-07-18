@@ -23,8 +23,9 @@ namespace WorkflowCore.Providers.AWS.Services
         private readonly Task _processTask;
         private readonly int _batchSize = 100;
         private ICollection<ShardSubscription> _subscribers = new HashSet<ShardSubscription>();
+        private readonly IDateTimeProvider _dateTimeProvider;
         
-        public KinesisStreamConsumer(AWSCredentials credentials, RegionEndpoint region, IKinesisTracker tracker, IDistributedLockProvider lockManager, ILoggerFactory logFactory)
+        public KinesisStreamConsumer(AWSCredentials credentials, RegionEndpoint region, IKinesisTracker tracker, IDistributedLockProvider lockManager, ILoggerFactory logFactory, IDateTimeProvider dateTimeProvider)
         {
             _logger = logFactory.CreateLogger(GetType());
             _tracker = tracker;
@@ -32,18 +33,19 @@ namespace WorkflowCore.Providers.AWS.Services
             _client = new AmazonKinesisClient(credentials, region);
             _processTask = new Task(Process);
             _processTask.Start();
+            _dateTimeProvider = dateTimeProvider;
         }
 
         public async Task Subscribe(string appName, string stream, Action<Record> action)
         {
-            var shards = await _client.ListShardsAsync(new ListShardsRequest()
+            var shards = await _client.ListShardsAsync(new ListShardsRequest
             {
                 StreamName = stream
             });
 
             foreach (var shard in shards.Shards)
             {
-                _subscribers.Add(new ShardSubscription()
+                _subscribers.Add(new ShardSubscription
                 {
                     AppName = appName,
                     Stream = stream,
@@ -59,7 +61,7 @@ namespace WorkflowCore.Providers.AWS.Services
             {
                 try
                 {
-                    var todo = _subscribers.Where(x => x.Snooze < DateTime.Now).ToList();
+                    var todo = _subscribers.Where(x => x.Snooze < _dateTimeProvider.Now).ToList();
                     foreach (var sub in todo)
                     {
                         if (!await _lockManager.AcquireLock($"{sub.AppName}.{sub.Stream}.{sub.Shard.ShardId}",
@@ -71,7 +73,7 @@ namespace WorkflowCore.Providers.AWS.Services
                             var records = await GetBatch(sub);
 
                             if (records.Records.Count == 0)
-                                sub.Snooze = DateTime.Now.AddSeconds(5);
+                                sub.Snooze = _dateTimeProvider.Now.AddSeconds(5);
 
                             var lastSequence = string.Empty;
 
@@ -115,7 +117,7 @@ namespace WorkflowCore.Providers.AWS.Services
 
             if (iterator == null)
             {
-                var iterResp = await _client.GetShardIteratorAsync(new GetShardIteratorRequest()
+                var iterResp = await _client.GetShardIteratorAsync(new GetShardIteratorRequest
                 {
                     ShardId = sub.Shard.ShardId,
                     StreamName = sub.Stream,
@@ -127,7 +129,7 @@ namespace WorkflowCore.Providers.AWS.Services
 
             try
             {
-                var result = await _client.GetRecordsAsync(new GetRecordsRequest()
+                var result = await _client.GetRecordsAsync(new GetRecordsRequest
                 {
                     ShardIterator = iterator,
                     Limit = _batchSize
@@ -138,7 +140,7 @@ namespace WorkflowCore.Providers.AWS.Services
             catch (ExpiredIteratorException)
             {
                 var lastSequence = await _tracker.GetNextLastSequenceNumber(sub.AppName, sub.Stream, sub.Shard.ShardId);
-                var iterResp = await _client.GetShardIteratorAsync(new GetShardIteratorRequest()
+                var iterResp = await _client.GetShardIteratorAsync(new GetShardIteratorRequest
                 {
                     ShardId = sub.Shard.ShardId,
                     StreamName = sub.Stream,
@@ -147,7 +149,7 @@ namespace WorkflowCore.Providers.AWS.Services
                 });
                 iterator = iterResp.ShardIterator;
 
-                var result = await _client.GetRecordsAsync(new GetRecordsRequest()
+                var result = await _client.GetRecordsAsync(new GetRecordsRequest
                 {
                     ShardIterator = iterator,
                     Limit = _batchSize

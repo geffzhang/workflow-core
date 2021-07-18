@@ -13,15 +13,19 @@ namespace WorkflowCore.Services.BackgroundTasks
         private readonly IDistributedLockProvider _lockProvider;
         private readonly IQueueProvider _queueProvider;
         private readonly ILogger _logger;
+        private readonly IGreyList _greylist;
         private readonly WorkflowOptions _options;
+        private readonly IDateTimeProvider _dateTimeProvider;
         private Timer _pollTimer;
 
-        public RunnablePoller(IPersistenceProvider persistenceStore, IQueueProvider queueProvider, ILoggerFactory loggerFactory, IServiceProvider serviceProvider, IWorkflowRegistry registry, IDistributedLockProvider lockProvider, WorkflowOptions options)
+        public RunnablePoller(IPersistenceProvider persistenceStore, IQueueProvider queueProvider, ILoggerFactory loggerFactory, IServiceProvider serviceProvider, IWorkflowRegistry registry, IDistributedLockProvider lockProvider, IGreyList greylist, IDateTimeProvider dateTimeProvider, WorkflowOptions options)
         {
             _persistenceStore = persistenceStore;
+            _greylist = greylist;
             _queueProvider = queueProvider;            
             _logger = loggerFactory.CreateLogger<RunnablePoller>();
             _lockProvider = lockProvider;
+            _dateTimeProvider = dateTimeProvider;
             _options = options;
         }
 
@@ -52,10 +56,16 @@ namespace WorkflowCore.Services.BackgroundTasks
                     try
                     {
                         _logger.LogInformation("Polling for runnable workflows");                        
-                        var runnables = await _persistenceStore.GetRunnableInstances(DateTime.Now);
+                        var runnables = await _persistenceStore.GetRunnableInstances(_dateTimeProvider.Now);
                         foreach (var item in runnables)
                         {
+                            if (_greylist.Contains($"wf:{item}"))
+                            {
+                                _logger.LogDebug($"Got greylisted workflow {item}");
+                                continue;
+                            }
                             _logger.LogDebug("Got runnable instance {0}", item);
+                            _greylist.Add($"wf:{item}");
                             await _queueProvider.QueueWork(item, QueueType.Workflow);
                         }
                     }
@@ -77,11 +87,18 @@ namespace WorkflowCore.Services.BackgroundTasks
                     try
                     {
                         _logger.LogInformation("Polling for unprocessed events");                        
-                        var events = await _persistenceStore.GetRunnableEvents(DateTime.Now);
+                        var events = await _persistenceStore.GetRunnableEvents(_dateTimeProvider.Now);
                         foreach (var item in events.ToList())
                         {
+                            if (_greylist.Contains($"evt:{item}"))
+                            {
+                                _logger.LogDebug($"Got greylisted event {item}");
+                                _greylist.Add($"evt:{item}");
+                                continue;
+                            }
                             _logger.LogDebug($"Got unprocessed event {item}");
-                            await _queueProvider.QueueWork(item, QueueType.Event);                            
+                            _greylist.Add($"evt:{item}");
+                            await _queueProvider.QueueWork(item, QueueType.Event);
                         }
                     }
                     finally

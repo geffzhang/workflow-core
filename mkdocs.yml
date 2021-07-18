@@ -4,11 +4,12 @@ nav:
     - Getting started: getting-started.md
     - External events: external-events.md
     - Activity workers: activities.md
-    - Error handing: error-handling.md
+    - Error handling: error-handling.md
     - Control structures: control-structures.md
     - Saga transactions: sagas.md
     - JSON / YAML Definitions: json-yaml.md
     - Persistence: persistence.md
+    - Middleware: workflow-middleware.md
     - Multi-node clusters: multi-node-clusters.md
     - ASP.NET Core: using-with-aspnet-core.md
     - Elasticsearch plugin: elastic-search.md

@@ -3,12 +3,9 @@ using Docker.DotNet.Models;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
 using System.Linq;
 using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
 
 namespace Docker.Testify
@@ -20,7 +17,7 @@ namespace Docker.Testify
         public abstract int InternalPort { get; }
 
         public virtual string ImageTag => "latest";
-        public virtual TimeSpan TimeOut => TimeSpan.FromSeconds(30);
+        public virtual TimeSpan TimeOut => TimeSpan.FromSeconds(60);
         public virtual IList<string> EnvironmentVariables => new List<string>();
         public int ExternalPort { get; }
 
@@ -29,6 +26,8 @@ namespace Docker.Testify
 
         protected readonly DockerClient docker;
     	protected string containerId;
+
+        private static HashSet<int> UsedPorts = new HashSet<int>();
 
         protected DockerSetup()
         {
@@ -58,7 +57,7 @@ namespace Docker.Testify
 
             await PullImage(ImageName, ImageTag);	        
 
-            var container = await docker.Containers.CreateContainerAsync(new CreateContainerParameters()
+            var container = await docker.Containers.CreateContainerAsync(new CreateContainerParameters
             {
                 Image = $"{ImageName}:{ImageTag}",
                 Name = $"{ContainerPrefix}-{Guid.NewGuid()}",
@@ -111,32 +110,37 @@ namespace Docker.Testify
                 return;
 
             Debug.WriteLine($"Pulling docker image {name}:{tag}");
-            await docker.Images.CreateImageAsync(new ImagesCreateParameters() { FromImage = name, Tag = tag }, null, new Progress<JSONMessage>());
+            await docker.Images.CreateImageAsync(new ImagesCreateParameters { FromImage = name, Tag = tag }, null, new Progress<JSONMessage>());
         }
 
         public void Dispose()
     	{
     	    docker.Containers.KillContainerAsync(containerId, new ContainerKillParameters()).Wait();
-    	    docker.Containers.RemoveContainerAsync(containerId, new ContainerRemoveParameters() { Force = true }).Wait();
+    	    docker.Containers.RemoveContainerAsync(containerId, new ContainerRemoveParameters { Force = true }).Wait();
     	}
 
         private int GetFreePort()
         {
-            const int startRange = 1000;
-            const int endRange = 10000;
-            var ipGlobalProperties = IPGlobalProperties.GetIPGlobalProperties();
-            var tcpPorts = ipGlobalProperties.GetActiveTcpListeners();
-            var udpPorts = ipGlobalProperties.GetActiveUdpListeners();
+            lock (UsedPorts)
+            {
+                const int startRange = 10002;
+                const int endRange = 15000;
+                var ipGlobalProperties = IPGlobalProperties.GetIPGlobalProperties();
+                var tcpPorts = ipGlobalProperties.GetActiveTcpListeners();
+                var udpPorts = ipGlobalProperties.GetActiveUdpListeners();
 
-            var result = startRange;
+                var result = startRange;
 
-            while (((tcpPorts.Any(x => x.Port == result)) || (udpPorts.Any(x => x.Port == result))) && result <= endRange)
-                result++;
+                while (((tcpPorts.Any(x => x.Port == result)) || (udpPorts.Any(x => x.Port == result))) && result <= endRange && !UsedPorts.Contains(result))
+                    result++;
 
-            if (result > endRange)
-                throw new PortsInUseException();
+                if (result > endRange)
+                    throw new PortsInUseException();
+                
+                UsedPorts.Add(result);
 
-            return result;
+                return result;
+            }
 	    }
     }
 }

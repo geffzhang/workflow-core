@@ -1,9 +1,8 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using WorkflowCore.Interface;
@@ -18,7 +17,7 @@ namespace WorkflowCore.Testing
         protected IWorkflowHost Host;
         protected IPersistenceProvider PersistenceProvider;
         protected List<StepError> UnhandledStepErrors = new List<StepError>();
-        
+
         protected virtual void Setup()
         {
             //setup dependency injection
@@ -27,10 +26,6 @@ namespace WorkflowCore.Testing
             ConfigureServices(services);
 
             var serviceProvider = services.BuildServiceProvider();
-
-            //config logging
-            var loggerFactory = serviceProvider.GetService<ILoggerFactory>();
-            //loggerFactory.AddConsole(LogLevel.Debug);
 
             PersistenceProvider = serviceProvider.GetService<IPersistenceProvider>();
             Host = serviceProvider.GetService<IWorkflowHost>();
@@ -41,7 +36,7 @@ namespace WorkflowCore.Testing
 
         protected void Host_OnStepError(WorkflowInstance workflow, WorkflowStep step, Exception exception)
         {
-            UnhandledStepErrors.Add(new StepError()
+            UnhandledStepErrors.Add(new StepError
             {
                 Exception = exception,
                 Step = step,
@@ -61,6 +56,13 @@ namespace WorkflowCore.Testing
             return workflowId;
         }
 
+        public async Task<string> StartWorkflowAsync(TData data)
+        {
+            var def = new TWorkflow();
+            var workflowId = await Host.StartWorkflow(def.Id, data);
+            return workflowId;
+        }
+
         protected void WaitForWorkflowToComplete(string workflowId, TimeSpan timeOut)
         {
             var status = GetStatus(workflowId);
@@ -71,6 +73,20 @@ namespace WorkflowCore.Testing
                 counter++;
                 status = GetStatus(workflowId);
             }
+        }
+
+        protected async Task<WorkflowStatus> WaitForWorkflowToCompleteAsync(string workflowId, TimeSpan timeOut)
+        {
+            var status = GetStatus(workflowId);
+            var counter = 0;
+            while ((status == WorkflowStatus.Runnable) && (counter < (timeOut.TotalMilliseconds / 100)))
+            {
+                await Task.Delay(100);
+                counter++;
+                status = GetStatus(workflowId);
+            }
+
+            return status;
         }
 
         protected IEnumerable<EventSubscription> GetActiveSubscriptons(string eventName, string eventKey)

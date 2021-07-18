@@ -1,10 +1,5 @@
-﻿using Docker.DotNet;
-using Docker.DotNet.Models;
-using System;
-using System.Collections.Generic;
+﻿using System;
 using System.Net;
-using System.Runtime.InteropServices;
-using System.Text;
 using Docker.Testify;
 using Xunit;
 using Amazon.DynamoDBv2;
@@ -20,6 +15,7 @@ namespace WorkflowCore.Tests.DynamoDB
 
         public override string ImageName => @"amazon/dynamodb-local";
         public override int InternalPort => 8000;
+        public override TimeSpan TimeOut => TimeSpan.FromSeconds(120);
 
         public override void PublishConnectionInfo()
         {

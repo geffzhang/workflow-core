@@ -5,7 +5,6 @@ using Microsoft.Extensions.Logging;
 using WorkflowCore.Interface;
 using System.Data;
 using System.Collections.Generic;
-using System.Collections.Concurrent;
 using System.Threading;
 
 namespace WorkflowCore.LockProviders.SqlServer
@@ -133,12 +132,9 @@ namespace WorkflowCore.LockProviders.SqlServer
             }
         }
 
-        public async Task Start()
-        {         
-        }
-
-        public async Task Stop()
-        {
-        }
+        public Task Start() => Task.CompletedTask;
+        
+        public Task Stop() => Task.CompletedTask;
+        
     }
 }

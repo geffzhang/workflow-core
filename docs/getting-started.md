@@ -20,7 +20,7 @@ public class HelloWorld : StepBody
 ```
 *The `StepBody` and `StepBodyAsync` class implementations are constructed by the workflow host which first tries to use IServiceProvider for dependency injection, if it can't construct it with this method, it will search for a parameterless constructor*
 
-### Then we define the workflow structure by composing a chain of steps.  The is done by implementing the IWorkflow interface
+### Then we define the workflow structure by composing a chain of steps.  This is done by implementing the IWorkflow interface
 
 ```C#
 public class HelloWorldWorkflow : IWorkflow
@@ -142,7 +142,7 @@ public class MyDataClass
 {
     public int Value1 { get; set; }
     public int Value2 { get; set; }
-    public int Value3 { get; set; }
+    public int Answer { get; set; }
 }
 
 //Our workflow definition with strongly typed internal data and mapped inputs & outputs
@@ -154,9 +154,9 @@ public class PassingDataWorkflow : IWorkflow<MyDataClass>
             .StartWith<AddNumbers>()
                 .Input(step => step.Input1, data => data.Value1)
                 .Input(step => step.Input2, data => data.Value2)
-                .Output(data => data.Value3, step => step.Output)
+                .Output(data => data.Answer, step => step.Output)
             .Then<CustomMessage>()
-                .Input(step => step.Message, data => "The answer is " + data.Value3.ToString());
+                .Input(step => step.Message, data => "The answer is " + data.Answer.ToString());
     }
     ...
 }
@@ -175,8 +175,8 @@ or in jSON format
       "StepType": "MyApp.AddNumbers, MyApp",
       "NextStepId": "ShowResult",
       "Inputs": { 
-          "Value1": "data.Value1",
-          "Value2": "data.Value2" 
+          "Input1": "data.Value1",
+          "Input2": "data.Value2" 
        },
       "Outputs": { 
           "Answer": "step.Output" 
@@ -186,7 +186,7 @@ or in jSON format
       "Id": "ShowResult",
       "StepType": "MyApp.CustomMessage, MyApp",
       "Inputs": { 
-          "Message": "\"The answer is \" + data.Value1" 
+          "Message": "\"The answer is \" + data.Answer" 
        }
     }
   ]
@@ -203,14 +203,14 @@ Steps:
   StepType: MyApp.AddNumbers, MyApp
   NextStepId: ShowResult
   Inputs:
-    Value1: data.Value1
-    Value2: data.Value2
+    Input1: data.Value1
+    Input2: data.Value2
   Outputs:
     Answer: step.Output
 - Id: ShowResult
   StepType: MyApp.CustomMessage, MyApp
   Inputs:
-    Message: '"The answer is " + data.Value1'
+    Message: '"The answer is " + data.Answer'
 ```
 
 

@@ -2,7 +2,6 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 
 namespace WorkflowCore.Models
 {
@@ -95,6 +94,12 @@ namespace WorkflowCore.Models
         public ExecutionPointer Find(Predicate<ExecutionPointer> match)
         {
             return _dictionary.Values.FirstOrDefault(x => match(x));
+        }
+
+        public ICollection<ExecutionPointer> FindByStatus(PointerStatus status)
+        {
+            //TODO: track states in hash table
+            return _dictionary.Values.Where(x => x.Status == status).ToList();
         }
 
         public int Count => _dictionary.Count;
