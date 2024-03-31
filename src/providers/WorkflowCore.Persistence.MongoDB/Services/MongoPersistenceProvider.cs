@@ -83,6 +83,8 @@ namespace WorkflowCore.Persistence.MongoDB.Services
             BsonClassMap.RegisterClassMap<ControlPersistenceData>(x => x.AutoMap());
             BsonClassMap.RegisterClassMap<SchedulePersistenceData>(x => x.AutoMap());
             BsonClassMap.RegisterClassMap<IteratorPersistenceData>(x => x.AutoMap());
+            BsonClassMap.RegisterClassMap<ScheduledCommand>(x => x.AutoMap())
+                .SetIgnoreExtraElements(true);
         }
 
         static bool indexesCreated = false;
@@ -91,8 +93,11 @@ namespace WorkflowCore.Persistence.MongoDB.Services
             if (!indexesCreated)
             {
                 instance.WorkflowInstances.Indexes.CreateOne(new CreateIndexModel<WorkflowInstance>(
-                    Builders<WorkflowInstance>.IndexKeys.Ascending(x => x.NextExecution),
-                    new CreateIndexOptions {Background = true, Name = "idx_nextExec"}));
+                    Builders<WorkflowInstance>.IndexKeys
+                        .Ascending(x => x.NextExecution)
+                        .Ascending(x => x.Status)
+                        .Ascending(x => x.Id),
+                    new CreateIndexOptions {Background = true, Name = "idx_nextExec_v2"}));
 
                 instance.Events.Indexes.CreateOne(new CreateIndexModel<Event>(
                     Builders<Event>.IndexKeys.Ascending(x => x.IsProcessed),
@@ -111,6 +116,17 @@ namespace WorkflowCore.Persistence.MongoDB.Services
                         .Ascending(x => x.EventKey),
                     new CreateIndexOptions { Background = true, Name = "idx_namekey" }));
 
+                instance.ScheduledCommands.Indexes.CreateOne(new CreateIndexModel<ScheduledCommand>(
+                    Builders<ScheduledCommand>.IndexKeys
+                        .Descending(x => x.ExecuteTime),
+                    new CreateIndexOptions { Background = true, Name = "idx_exectime" }));
+
+                instance.ScheduledCommands.Indexes.CreateOne(new CreateIndexModel<ScheduledCommand>(
+                    Builders<ScheduledCommand>.IndexKeys
+                        .Ascending(x => x.CommandName)
+                        .Ascending(x => x.Data),
+                    new CreateIndexOptions { Background = true, Unique = true, Name = "idx_key" }));
+
                 indexesCreated = true;
             }
         }
@@ -123,6 +139,8 @@ namespace WorkflowCore.Persistence.MongoDB.Services
 
         private IMongoCollection<ExecutionError> ExecutionErrors => _database.GetCollection<ExecutionError>("wfc.execution_errors");
 
+        private IMongoCollection<ScheduledCommand> ScheduledCommands => _database.GetCollection<ScheduledCommand>("wfc.scheduled_commands");
+
         public async Task<string> CreateNewWorkflow(WorkflowInstance workflow, CancellationToken cancellationToken = default)
         {
             await WorkflowInstances.InsertOneAsync(workflow, cancellationToken: cancellationToken);
@@ -132,6 +150,23 @@ namespace WorkflowCore.Persistence.MongoDB.Services
         public async Task PersistWorkflow(WorkflowInstance workflow, CancellationToken cancellationToken = default)
         {
             await WorkflowInstances.ReplaceOneAsync(x => x.Id == workflow.Id, workflow, cancellationToken: cancellationToken);
+        }
+
+        public async Task PersistWorkflow(WorkflowInstance workflow, List<EventSubscription> subscriptions, CancellationToken cancellationToken = default)
+        {
+            if (subscriptions == null || subscriptions.Count < 1)
+            {
+                await PersistWorkflow(workflow, cancellationToken);
+                return;
+            }
+
+            using (var session = await _database.Client.StartSessionAsync(cancellationToken: cancellationToken))
+            {
+                session.StartTransaction();
+                await PersistWorkflow(workflow, cancellationToken);
+                await EventSubscriptions.InsertManyAsync(subscriptions, cancellationToken: cancellationToken);
+                await session.CommitTransactionAsync(cancellationToken);
+            }
         }
 
         public async Task<IEnumerable<string>> GetRunnableInstances(DateTime asAt, CancellationToken cancellationToken = default)
@@ -290,6 +325,48 @@ namespace WorkflowCore.Persistence.MongoDB.Services
         {
             if (errors.Any())
                 await ExecutionErrors.InsertManyAsync(errors, cancellationToken: cancellationToken);
+        }
+
+        public bool SupportsScheduledCommands => true;
+
+        public async Task ScheduleCommand(ScheduledCommand command)
+        {
+            try
+            {
+                await ScheduledCommands.InsertOneAsync(command);
+            }
+            catch (MongoWriteException ex)
+            {
+                if (ex.WriteError?.Category == ServerErrorCategory.DuplicateKey)
+                     return;
+                throw;
+            }
+            catch (MongoBulkWriteException ex)
+            {
+                if (ex.WriteErrors.All(x => x.Category == ServerErrorCategory.DuplicateKey))
+                    return;
+                throw;
+            }
+        }
+
+        public async Task ProcessCommands(DateTimeOffset asOf, Func<ScheduledCommand, Task> action, CancellationToken cancellationToken = default)
+        {
+            var cursor = await ScheduledCommands.FindAsync(x => x.ExecuteTime < asOf.UtcDateTime.Ticks);
+            while (await cursor.MoveNextAsync(cancellationToken))
+            {
+                foreach (var command in cursor.Current)
+                {
+                    try
+                    {
+                        await action(command);
+                        await ScheduledCommands.DeleteOneAsync(x => x.CommandName == command.CommandName && x.Data == command.Data);
+                    }
+                    catch (Exception)
+                    {
+                        //TODO: add logger
+                    }
+                }
+            }
         }
     }
 }

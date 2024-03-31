@@ -24,6 +24,8 @@ namespace WorkflowCore.Services
         private readonly List<Event> _events = new List<Event>();
         private readonly List<ExecutionError> _errors = new List<ExecutionError>();
 
+        public bool SupportsScheduledCommands => false;
+
         public async Task<string> CreateNewWorkflow(WorkflowInstance workflow, CancellationToken _ = default)
         {
             lock (_instances)
@@ -41,6 +43,25 @@ namespace WorkflowCore.Services
                 var existing = _instances.First(x => x.Id == workflow.Id);
                 _instances.Remove(existing);
                 _instances.Add(workflow);
+            }
+        }
+
+        public async Task PersistWorkflow(WorkflowInstance workflow, List<EventSubscription> subscriptions, CancellationToken cancellationToken = default)
+        {
+            lock (_instances)
+            {
+                var existing = _instances.First(x => x.Id == workflow.Id);
+                _instances.Remove(existing);
+                _instances.Add(workflow);
+
+                lock (_subscriptions)
+                {
+                    foreach (var subscription in subscriptions)
+                    {
+                        subscription.Id = Guid.NewGuid().ToString();
+                        _subscriptions.Add(subscription);
+                    }
+                }
             }
         }
 
@@ -254,6 +275,16 @@ namespace WorkflowCore.Services
             {
                 _errors.AddRange(errors);
             }
+        }
+
+        public Task ScheduleCommand(ScheduledCommand command)
+        {
+            throw new NotImplementedException();
+        }
+
+        public Task ProcessCommands(DateTimeOffset asOf, Func<ScheduledCommand, Task> action, CancellationToken cancellationToken = default)
+        {
+            throw new NotImplementedException();
         }
     }
 

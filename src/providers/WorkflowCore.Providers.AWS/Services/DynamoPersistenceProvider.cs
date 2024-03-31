@@ -24,10 +24,12 @@ namespace WorkflowCore.Providers.AWS.Services
         public const string SUBCRIPTION_TABLE = "subscriptions";
         public const string EVENT_TABLE = "events";
 
-        public DynamoPersistenceProvider(AWSCredentials credentials, AmazonDynamoDBConfig config, IDynamoDbProvisioner provisioner, string tablePrefix, ILoggerFactory logFactory)
+        public bool SupportsScheduledCommands => false;
+
+        public DynamoPersistenceProvider(AmazonDynamoDBClient dynamoDBClient, IDynamoDbProvisioner provisioner, string tablePrefix, ILoggerFactory logFactory)
         {
             _logger = logFactory.CreateLogger<DynamoPersistenceProvider>();
-            _client = new AmazonDynamoDBClient(credentials, config);
+            _client = dynamoDBClient;
             _tablePrefix = tablePrefix;
             _provisioner = provisioner;
         }
@@ -57,6 +59,43 @@ namespace WorkflowCore.Providers.AWS.Services
             };
 
             var response = await _client.PutItemAsync(request, cancellationToken);
+        }
+
+        public async Task PersistWorkflow(WorkflowInstance workflow, List<EventSubscription> subscriptions, CancellationToken cancellationToken = default)
+        {
+            var transactionWriteItemsRequest = new TransactWriteItemsRequest()
+            {
+                TransactItems = new List<TransactWriteItem>()
+                {
+                    { 
+                        new TransactWriteItem() 
+                        { 
+                            Put = new Put() 
+                            {
+                                TableName = $"{_tablePrefix}-{WORKFLOW_TABLE}",
+                                Item = workflow.ToDynamoMap()
+                            } 
+                        } 
+                    }
+                }
+            };
+
+            foreach(var subscription in subscriptions)
+            {
+                subscription.Id = Guid.NewGuid().ToString();
+
+                transactionWriteItemsRequest.TransactItems.Add(new TransactWriteItem() 
+                {
+                    Put = new Put()
+                    {
+                        TableName = $"{_tablePrefix}-{SUBCRIPTION_TABLE}",
+                        Item = subscription.ToDynamoMap(),
+                        ConditionExpression = "attribute_not_exists(id)"
+                    }
+                });
+            }
+
+            await _client.TransactWriteItemsAsync(transactionWriteItemsRequest, cancellationToken);
         }
 
         public async Task<IEnumerable<string>> GetRunnableInstances(DateTime asAt, CancellationToken cancellationToken = default)
@@ -468,6 +507,16 @@ namespace WorkflowCore.Providers.AWS.Services
             };
             
             await _client.UpdateItemAsync(request, cancellationToken);
+        }
+
+        public Task ScheduleCommand(ScheduledCommand command)
+        {
+            throw new NotImplementedException();
+        }
+
+        public Task ProcessCommands(DateTimeOffset asOf, Func<ScheduledCommand, Task> action, CancellationToken cancellationToken = default)
+        {
+            throw new NotImplementedException();
         }
     }
 }

@@ -11,6 +11,8 @@ namespace WorkflowCore.Services
     {
         private readonly ISingletonMemoryProvider _innerService;
 
+        public bool SupportsScheduledCommands => false;
+
         public TransientMemoryPersistenceProvider(ISingletonMemoryProvider innerService)
         {
             _innerService = innerService;
@@ -48,6 +50,16 @@ namespace WorkflowCore.Services
 
         public Task PersistWorkflow(WorkflowInstance workflow, CancellationToken _ = default) => _innerService.PersistWorkflow(workflow);
 
+        public async Task PersistWorkflow(WorkflowInstance workflow, List<EventSubscription> subscriptions, CancellationToken cancellationToken = default)
+        {
+            await PersistWorkflow(workflow, cancellationToken);
+
+            foreach(var subscription in subscriptions)
+            {
+                await CreateEventSubscription(subscription, cancellationToken);
+            }
+        }
+
         public Task TerminateSubscription(string eventSubscriptionId, CancellationToken _ = default) => _innerService.TerminateSubscription(eventSubscriptionId);
         public Task<EventSubscription> GetSubscription(string eventSubscriptionId, CancellationToken _ = default) => _innerService.GetSubscription(eventSubscriptionId);
 
@@ -56,5 +68,15 @@ namespace WorkflowCore.Services
         public Task<bool> SetSubscriptionToken(string eventSubscriptionId, string token, string workerId, DateTime expiry, CancellationToken _ = default) => _innerService.SetSubscriptionToken(eventSubscriptionId, token, workerId, expiry);
 
         public Task ClearSubscriptionToken(string eventSubscriptionId, string token, CancellationToken _ = default) => _innerService.ClearSubscriptionToken(eventSubscriptionId, token);
+
+        public Task ScheduleCommand(ScheduledCommand command)
+        {
+            throw new NotImplementedException();
+        }
+
+        public Task ProcessCommands(DateTimeOffset asOf, Func<ScheduledCommand, Task> action, CancellationToken cancellationToken = default)
+        {
+            throw new NotImplementedException();
+        }
     }
 }

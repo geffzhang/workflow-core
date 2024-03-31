@@ -28,6 +28,8 @@ namespace WorkflowCore.Providers.Redis.Services
         private readonly JsonSerializerSettings _serializerSettings = new JsonSerializerSettings { TypeNameHandling = TypeNameHandling.All };
         private readonly bool _removeComplete;
 
+        public bool SupportsScheduledCommands => false;
+
         public RedisPersistenceProvider(string connectionString, string prefix, bool removeComplete, ILoggerFactory logFactory)
         {
             _connectionString = connectionString;
@@ -43,6 +45,16 @@ namespace WorkflowCore.Providers.Redis.Services
             workflow.Id = Guid.NewGuid().ToString();
             await PersistWorkflow(workflow);
             return workflow.Id;
+        }
+
+        public async Task PersistWorkflow(WorkflowInstance workflow, List<EventSubscription> subscriptions, CancellationToken cancellationToken = default)
+        {
+            await PersistWorkflow(workflow, cancellationToken);
+
+            foreach (var subscription in subscriptions)
+            {
+                await CreateEventSubscription(subscription, cancellationToken);
+            }
         }
 
         public async Task PersistWorkflow(WorkflowInstance workflow, CancellationToken _ = default)
@@ -231,6 +243,16 @@ namespace WorkflowCore.Providers.Redis.Services
 
         public void EnsureStoreExists()
         {
+        }
+
+        public Task ScheduleCommand(ScheduledCommand command)
+        {
+            throw new NotImplementedException();
+        }
+
+        public Task ProcessCommands(DateTimeOffset asOf, Func<ScheduledCommand, Task> action, CancellationToken cancellationToken = default)
+        {
+            throw new NotImplementedException();
         }
     }
 }

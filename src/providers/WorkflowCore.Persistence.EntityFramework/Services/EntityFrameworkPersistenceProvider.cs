@@ -17,6 +17,8 @@ namespace WorkflowCore.Persistence.EntityFramework.Services
         private readonly bool _canMigrateDB;
         private readonly IWorkflowDbContextFactory _contextFactory;
 
+        public bool SupportsScheduledCommands => true;
+
         public EntityFrameworkPersistenceProvider(IWorkflowDbContextFactory contextFactory, bool canCreateDB, bool canMigrateDB)
         {
             _contextFactory = contextFactory;
@@ -146,6 +148,32 @@ namespace WorkflowCore.Persistence.EntityFramework.Services
                     .FirstAsync(cancellationToken);
 
                 var persistable = workflow.ToPersistable(existingEntity);
+                await db.SaveChangesAsync(cancellationToken);
+            }
+        }
+		
+		public async Task PersistWorkflow(WorkflowInstance workflow, List<EventSubscription> subscriptions, CancellationToken cancellationToken = default)
+        {
+            using (var db = ConstructDbContext())
+            {
+                var uid = new Guid(workflow.Id);
+                var existingEntity = await db.Set<PersistedWorkflow>()
+                    .Where(x => x.InstanceId == uid)
+                    .Include(wf => wf.ExecutionPointers)
+                    .ThenInclude(ep => ep.ExtensionAttributes)
+                    .Include(wf => wf.ExecutionPointers)
+                    .AsTracking()
+                    .FirstAsync(cancellationToken);
+
+                var workflowPersistable = workflow.ToPersistable(existingEntity);
+
+                foreach (var subscription in subscriptions)
+                {
+                    subscription.Id = Guid.NewGuid().ToString();
+                    var subscriptionPersistable = subscription.ToPersistable();
+                    db.Set<PersistedSubscription>().Add(subscriptionPersistable);
+                }
+
                 await db.SaveChangesAsync(cancellationToken);
             }
         }
@@ -363,6 +391,48 @@ namespace WorkflowCore.Persistence.EntityFramework.Services
                 existingEntity.ExternalWorkerId = null;
                 existingEntity.ExternalTokenExpiry = null;
                 await db.SaveChangesAsync(cancellationToken);
+            }
+        }
+
+        public async Task ScheduleCommand(ScheduledCommand command)
+        {
+            try
+            {
+                using (var db = ConstructDbContext())
+                {
+                    var persistable = command.ToPersistable();
+                    var result = db.Set<PersistedScheduledCommand>().Add(persistable);
+                    await db.SaveChangesAsync();
+                }
+            }
+            catch (DbUpdateException)
+            {
+                //log
+            }
+        }
+
+        public async Task ProcessCommands(DateTimeOffset asOf, Func<ScheduledCommand, Task> action, CancellationToken cancellationToken = default)
+        {
+            using (var db = ConstructDbContext())
+            {
+                var cursor = db.Set<PersistedScheduledCommand>()
+                    .Where(x => x.ExecuteTime < asOf.UtcDateTime.Ticks)
+                    .AsAsyncEnumerable();
+
+                await foreach (var command in cursor)
+                {
+                    try
+                    {
+                        await action(command.ToScheduledCommand());
+                        using var db2 = ConstructDbContext();
+                        db2.Set<PersistedScheduledCommand>().Remove(command);
+                        await db2.SaveChangesAsync();
+                    }
+                    catch (Exception)
+                    {
+                        //TODO: add logger
+                    }
+                }
             }
         }
     }

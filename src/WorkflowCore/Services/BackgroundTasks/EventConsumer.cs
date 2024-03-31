@@ -43,6 +43,8 @@ namespace WorkflowCore.Services.BackgroundTasks
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var evt = await _eventRepository.GetEvent(itemId, cancellationToken);
+
+                WorkflowActivity.Enrich(evt);
                 if (evt.IsProcessed)
                 {
                     _greylist.Add($"evt:{evt.Id}");
@@ -74,7 +76,13 @@ namespace WorkflowCore.Services.BackgroundTasks
                         complete = complete && await SeedSubscription(evt, sub, toQueue, cancellationToken);
 
                     if (complete)
+                    {
                         await _eventRepository.MarkEventProcessed(itemId, cancellationToken);
+                    }
+                    else
+                    {
+                        _greylist.Remove($"evt:{evt.Id}");
+                    }
 
                     foreach (var eventId in toQueue)
                         await QueueProvider.QueueWork(eventId, QueueType.Event);
@@ -87,7 +95,7 @@ namespace WorkflowCore.Services.BackgroundTasks
         }
         
         private async Task<bool> SeedSubscription(Event evt, EventSubscription sub, HashSet<string> toQueue, CancellationToken cancellationToken)
-        {            
+        {
             foreach (var eventId in await _eventRepository.GetEvents(sub.EventName, sub.EventKey, sub.SubscribeAsOf, cancellationToken))
             {
                 if (eventId == evt.Id)
@@ -106,7 +114,7 @@ namespace WorkflowCore.Services.BackgroundTasks
 
             if (!await _lockProvider.AcquireLock(sub.WorkflowId, cancellationToken))
             {
-                Logger.LogInformation("Workflow locked {0}", sub.WorkflowId);
+                Logger.LogInformation("Workflow locked {WorkflowId}", sub.WorkflowId);
                 return false;
             }
             
